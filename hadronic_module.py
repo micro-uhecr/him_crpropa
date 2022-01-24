@@ -45,7 +45,7 @@ HMRunInstance.init_generator(event_kinematics)
 class HadronicInteractions(Module):
     '''Prototype class to handle hadronic interactions
     '''
-    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', temperature)):
+    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000)):
         """The initialization takes as arguments
             - matter_density : the matter density in units of m-3
             - composition    : a dictionary {pid : particle_density} in arbitrary units
@@ -58,7 +58,7 @@ class HadronicInteractions(Module):
         self.random_number_generator = Random()  # using th eponymous class from CRPropa
         self.hadronic_model = HMRunInstance
     
-    def _compute_interaction_rates():
+    def _compute_interaction_rates(self):
         """Determine the hadronic rates based on inputs: matter density,
         distribution, temperature, and composition.
         """ 
@@ -87,7 +87,7 @@ class HadronicInteractions(Module):
 
         while current_step > 0:
             # Sampling interaction from the inverse of an exponential distribution
-            random_number = random.rand()
+            random_number = self.random_number_generator.rand()
             interaction_step = - log(random_number) / Sigma  # ToDo: optimize sampling for a good range 
 
             interaction_occurred = current_step > interaction_step
