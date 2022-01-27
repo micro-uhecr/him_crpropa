@@ -5,6 +5,7 @@
     Date: 9/9/2021
     Leonel Morejon
 """
+from audioop import cross
 import sys
 # from hepunits import c_light
 from numpy import pi, log, sign, array
@@ -133,25 +134,24 @@ class HadronicInteractions(Module):
                     ps.setPosition(candidate.current.getPosition())
                     ps.setEnergy(en * GeV)
                     
-                    # Set rotation matrix to bring z into current's direction
-                    rotation_angle1 = candidate.current.getDirection().getTheta() # in radians
-                    rotation_vector1 = Vector3d(1, 0, 0).cross(candidate.current.getDirection().getUnitVector())
-                    # Rot1 = R.from_rotvec(rotation_angle1 * array(rotation_vector1))
-                    Rot1 = R.from_rotvec(array([2, 2, 0]))
+                    # Define orthogonal vector base with arbitrary orientation, but z along the primary direction 
+                    vector1 = candidate.current.getDirection().getUnitVector()
+                    vector2 = Vector3d(1, 0, 0).cross(candidate.current.getDirection().getUnitVector())
+                    vector3 = vector1.cross(vector2)
                     
-                    rotation_angle2 = 2 * pi * self.random_number_generator.rand() 
-                    rotation_vector2 = candidate.current.getDirection().getUnitVector()
-                    # Rot2 = R.from_rotvec(rotation_angle2 * array(rotation_vector2))
-                    Rot2 = R.from_rotvec(array([1, 0, 1]))
-                    
-                    Total_Rotation = (Rot1 * Rot2).as_matrix()
+                    # Rotate the transversal plane a random angle
+                    random_angle = 2 * pi * self.random_number_generator.rand()
+                    vector2 = vector2.getRotated(vector1, random_angle)
+                    vector3 = vector3.getRotated(vector1, random_angle)
 
-                    components = array(Vector3d(px, py, pz)).dot(Total_Rotation)
-                    Secondary_Direction = Vector3d(components[0],
-                                                   components[1],
-                                                   components[2])
-                    # ps.setDirection(Secondary_Direction)
-                    ps.setDirection(Vector3d(1, 0, 0))
+                    # Set lengths to secondary momentum components
+                    vector1.setR(pz)
+                    vector2.setR(px)
+                    vector3.setR(py)
+
+                    # Add components to get the resulting momentum of the secondary
+                    Secondary_Direction = vector1 + vector2 + vector3
+                    ps.setDirection(Secondary_Direction)
 
                     candidate.addSecondary(Candidate(ps)) # adding secondary to parent's particle stack
 
