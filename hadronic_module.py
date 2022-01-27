@@ -6,7 +6,9 @@
     Leonel Morejon
 """
 import sys
-from numpy import log, sign
+# from hepunits import c_light
+from numpy import pi, log, sign, array
+from scipy.spatial.transform import Rotation as R
 from crpropa import GeV, Module, ParticleState, Candidate, Vector3d, Random
 
 from config_file import *
@@ -34,19 +36,19 @@ impy_config['stable_list'] = []  # no short-lived particles (t < 1h)
 HMRunInstance = make_generator_instance(interaction_model_by_tag[mtag])
 
 # Some arbitrary initialization
-event_kinematics = EventKinematics(
+init_event_kinematics = EventKinematics(
     elab=1e12,    # high enough energy to cover all energies the propagation will use
     p1pdg=2212,
     p2pdg=2212
 )
-HMRunInstance.init_generator(event_kinematics)
-
+HMRunInstance.init_generator(init_event_kinematics, seed=100001)  # fixed seed for now
 
 class HadronicInteractions(Module):
     '''Prototype class to handle hadronic interactions
     '''
-    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000)):
+    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000), seed=None):
         """The initialization takes as arguments
+            - seed           : random numbergenerator seed
             - matter_density : the matter density in units of m-3
             - composition    : a dictionary {pid : particle_density} in arbitrary units
             - distribution   : a list containing (str distribution_type, *distribution_args)
@@ -55,8 +57,13 @@ class HadronicInteractions(Module):
         self.matter_density = matter_density
         self.composition = composition
         self.cross_section = 1e-30  # in m2
-        self.random_number_generator = Random()  # using th eponymous class from CRPropa
         self.hadronic_model = HMRunInstance
+        self.event_kinematics = init_event_kinematics
+
+        if seed is None:
+            self.random_number_generator = Random()  # using th eponymous class from CRPropa
+        else:
+            self.random_number_generator = Random(seed)
     
     def _compute_interaction_rates(self):
         """Determine the hadronic rates based on inputs: matter density,
@@ -95,64 +102,73 @@ class HadronicInteractions(Module):
             if not interaction_occurred:
                 return
             else:
-                # candidate.limitNextStep(interaction_step)
-                # Call to hadronic interaction code and get products
-                mass_proton = pdata.mass(2212) # GeV
-                secondaries = self.sample_interaction(candidate.current.getEnergy() / GeV + mass_proton)
-                # secondaries = self.sample_interaction(12)
+                # candidate.limitNextStep(interaction_step)          
+
+                self.event_kinematics = EventKinematics(
+                    elab  = candidate.current.getEnergy() / GeV, # projectile energy, lab frame
+                    p1pdg = 2212, p2pdg = 2212) # p-p interaction
+                                    
+                secondaries = self.sample_interaction()
                 
                 for (pid, en, px, py, pz) in secondaries:
                     if pid not in \
-                        [     22,        # gamma  
-                              11, -11,   # electron, positron
-                             211, 111, -211, # pions
-                            2112, -2112, # anti-/ neutron
-                            2212, -2212, # anti-/ proton
+                        [     22,             # gamma  
+                              11, -11,        # electron, positron
+                             211, 111, -211,  # pions
+                            -2112, 2112,      # (anti)neutron
+                            -2212, 2212,      # (anti)proton
                         ]:
                         continue
 
-                    # Adding secondaries for propagation
+                    # Injecting secondaries to CRPropa stack
                     ps = ParticleState()
 
                     if abs(pid) == 2212:
-                        ps.setId(int(sign(pid) * 1000010010)) # crpropa special treatment of anti-/protons
+                        ps.setId(int(sign(pid) * 1000010010)) # crpropa issue with (anti)protons id
                     elif abs(pid) == 2112:
-                        ps.setId(int(sign(pid) * 1000000010)) # crpropa special treatment of anti-/neutrons
+                        ps.setId(int(sign(pid) * 1000000010)) # crpropa issue with (anti)neutrons id
                     else:
                         ps.setId(int(pid))
 
                     ps.setPosition(candidate.current.getPosition())
                     ps.setEnergy(en * GeV)
                     
-                    # Set rotation matrix to bring z into current direction and use to rotate secondaries
-                    # Secondary_Direction = candidate.current.getDirection().getRotated(Vector3d(1, 0, 0), 3.14)# ToDo: implement for 3D
-                    Secondary_Direction = Vector3d(px, py, pz)
-                    Secondary_Direction /= Secondary_Direction.getR()
-                    ps.setDirection(Secondary_Direction)
+                    # Set rotation matrix to bring z into current's direction
+                    rotation_angle1 = candidate.current.getDirection().getTheta() # in radians
+                    rotation_vector1 = Vector3d(1, 0, 0).cross(candidate.current.getDirection().getUnitVector())
+                    # Rot1 = R.from_rotvec(rotation_angle1 * array(rotation_vector1))
+                    Rot1 = R.from_rotvec(array([2, 2, 0]))
+                    
+                    rotation_angle2 = 2 * pi * self.random_number_generator.rand() 
+                    rotation_vector2 = candidate.current.getDirection().getUnitVector()
+                    # Rot2 = R.from_rotvec(rotation_angle2 * array(rotation_vector2))
+                    Rot2 = R.from_rotvec(array([1, 0, 1]))
+                    
+                    Total_Rotation = (Rot1 * Rot2).as_matrix()
+
+                    components = array(Vector3d(px, py, pz)).dot(Total_Rotation)
+                    Secondary_Direction = Vector3d(components[0],
+                                                   components[1],
+                                                   components[2])
+                    # ps.setDirection(Secondary_Direction)
+                    ps.setDirection(Vector3d(1, 0, 0))
 
                     candidate.addSecondary(Candidate(ps)) # adding secondary to parent's particle stack
 
                 # Remove the covered distance
                 current_step -= interaction_step
 
-    def sample_interaction(self, energy):
-        """Calls hadronic model using the interface from impy 
-
-        Arguments:
-        ------------
-        energy: energy in GeV (lab frame)
+    def sample_interaction(self):
+        """Calls hadronic model using the interface from impy and 
+        the member event_kinematics.
         """
 
-        event_kinematics = EventKinematics(
-            elab  = energy,
-            p1pdg = 2212,
-            p2pdg = 2212
-        )
-
-        event = list(self.hadronic_model.event_generator(event_kinematics, 1))[0]
+        # TODO: since generating only one event, use method event_generator instead!
+        event = list(self.hadronic_model.event_generator(self.event_kinematics, 1))[0]
+        self.event_kinematics.boost_cms_to_lab(event)
         event.filter_final_state()
 
-        # Filtering particles. TODO: implement as input to function     
+        # Filtering particles. TODO: implement as input to function
         mask = abs(event.xf) > 0.1
 
         secondaries = [sec_properties for sec_properties in 
