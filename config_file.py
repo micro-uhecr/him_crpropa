@@ -11,3 +11,5 @@ mtag = 'SIBYLL23D'
 # mtag = 'QGSJET01C'    
 
 impy_directory = '/home/leonel/GitProjects/impy/'
+
+Emin = 10 # GeV

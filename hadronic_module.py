@@ -83,7 +83,7 @@ class HadronicInteractions(Module):
         if abs(candidate.current.getId()) not in \
             [ 1000010010, # protons
               1000000010, # neutrons
-            ]:
+            ] or candidate.current.getEnergy() < Emin * GeV:
             return
         
         current_step = candidate.getCurrentStep()
