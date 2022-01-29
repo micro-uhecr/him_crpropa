@@ -81,11 +81,9 @@ class HadronicInteractions(Module):
         """
         # Skip if not a proton!!! or too low energy for the Hadr. Model
         if abs(candidate.current.getId()) not in \
-            [ 1000010010,
-              1000000010,
-                     111,
-                     211
-            ] or candidate.current.getEnergy() < 100 * GeV:
+            [ 1000010010, # protons
+              1000000010, # neutrons
+            ]:
             return
         
         current_step = candidate.getCurrentStep()
