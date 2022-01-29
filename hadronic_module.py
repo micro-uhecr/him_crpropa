@@ -133,7 +133,7 @@ class HadronicInteractions(Module):
 
                     ps.setPosition(candidate.current.getPosition())
                     ps.setEnergy(en * GeV)
-                    
+                                        
                     # Define orthogonal vector base with arbitrary orientation, but z along the primary direction 
                     vector1 = candidate.current.getDirection().getUnitVector()
                     vector2 = Vector3d(1, 0, 0).cross(candidate.current.getDirection().getUnitVector())
@@ -145,12 +145,15 @@ class HadronicInteractions(Module):
                     vector3 = vector3.getRotated(vector1, random_angle)
 
                     # Set lengths to secondary momentum components
-                    vector1.setR(pz)
-                    vector2.setR(px)
-                    vector3.setR(py)
+                    ptot = sqrt(px**2 + py**2 + pz**2)
+                    vector1.setR(pz / ptot)
+                    vector2.setR(px / ptot)
+                    vector3.setR(py / ptot)
 
                     # Add components to get the resulting momentum of the secondary
                     Secondary_Direction = vector1 + vector2 + vector3
+                    Secondary_Direction.setR(1)  # ensure norm
+                    
                     ps.setDirection(Secondary_Direction)
 
                     candidate.addSecondary(Candidate(ps)) # adding secondary to parent's particle stack
