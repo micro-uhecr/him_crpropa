@@ -5,18 +5,17 @@
     Date: 9/9/2021
     Leonel Morejon
 """
-from audioop import cross
+
 import sys
-# from hepunits import c_light
-from numpy import pi, log, sign, array
+from numpy import pi, log, sign, sqrt
 from scipy.spatial.transform import Rotation as R
-from crpropa import GeV, Module, ParticleState, Candidate, Vector3d, Random
+from crpropa import c_light, GeV, Module, ParticleState, Candidate, Vector3d, Random
 
 from config_file import *
 sys.path.append(impy_directory)
 
 from impy.kinematics import EventKinematics
-from impy import pdata, impy_config
+from impy import impy_config
 from impy.definitions import interaction_model_by_tag, make_generator_instance
 
 
