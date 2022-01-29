@@ -103,9 +103,10 @@ class HadronicInteractions(Module):
                 return
             else:
                 # candidate.limitNextStep(interaction_step)          
+                plab = candidate.current.getMomentum().getR() / GeV * c_light
 
-                self.event_kinematics = EventKinematics(
-                    elab  = candidate.current.getEnergy() / GeV, # projectile energy, lab frame
+                event_kinematics = EventKinematics(
+                    plab =  plab, # projectile momentum, lab frame
                     p1pdg = 2212, p2pdg = 2212) # p-p interaction
                                     
                 secondaries = self.sample_interaction()
