@@ -100,15 +100,18 @@ class HadronicInteractions(Module):
             if not interaction_occurred:
                 return
             else:
-                # candidate.limitNextStep(interaction_step)          
+                # candidate.limitNextStep(interaction_step)
                 plab = candidate.current.getMomentum().getR() / GeV * c_light
 
                 event_kinematics = EventKinematics(
                     plab =  plab, # projectile momentum, lab frame
                     p1pdg = 2212, p2pdg = 2212) # p-p interaction
                                     
-                secondaries = self.sample_interaction()
-                
+                secondaries = self.sample_interaction(event_kinematics)
+                # Define an arbitrary orthogonal base using the primary direction and arbitrary zenith
+                random_angle = 2 * pi * self.random_number_generator.rand()
+                vector1, vector2, vector3 = get_orthonormal_base(candidate.current.getDirection(), random_angle)
+
                 for (pid, en, px, py, pz) in secondaries:
                     if pid not in \
                         [     22,             # gamma  
@@ -159,18 +162,19 @@ class HadronicInteractions(Module):
                 # Remove the covered distance
                 current_step -= interaction_step
 
-    def sample_interaction(self):
+    def sample_interaction(self, event_kinematics):
         """Calls hadronic model using the interface from impy and 
         the member event_kinematics.
         """
 
         # TODO: since generating only one event, use method event_generator instead!
-        event = list(self.hadronic_model.event_generator(self.event_kinematics, 1))[0]
-        self.event_kinematics.boost_cms_to_lab(event)
+        event = list(self.hadronic_model.event_generator(event_kinematics, 1))[0]
         event.filter_final_state()
 
         # Filtering particles. TODO: implement as input to function
         mask = abs(event.xf) > 0.1
+
+        event_kinematics.boost_cms_to_lab(event)
 
         secondaries = [sec_properties for sec_properties in 
             zip(event.p_ids[mask], 
