@@ -178,5 +178,30 @@ class HadronicInteractions(Module):
                 event.py[mask], 
                 event.pz[mask])]
 
+        return secondaries
+
+
+def get_orthonormal_base(vector3d, random_angle):
+    """Returns a vector orthonormal base where one of the directions
+    is aligned to vector3d, and the other two have arbitrary orientation.
+    In other words, this function returns three vectors that are normalized, 
+    othogonal to each other, and have arbitrary orientation apart from the 
+    provided vector3d.
+    """
+
+    vector3d.setR(1)
+    vector1 = vector3d
+    x, y, z = vector1.x, vector1.y, vector1.z
+    vector2 = Vector3d(x + y, z + y, 
+                       -(x**2 + y**2 + y*(x + z))/z) # orthogonal to vector1
+    vector3 = vector1.cross(vector2) # orthogonal to both vector1 and vector2
+
+    # Normalize base
+    vector2.setR(1)
+    vector3.setR(1)
+
+    # Rotate the transversal plane to vector1 by a random angle
+    vector2 = vector2.getRotated(vector1, random_angle)
+    vector3 = vector3.getRotated(vector1, random_angle)
 
         return secondaries
