@@ -32,15 +32,28 @@ from impy.definitions import interaction_model_by_tag, make_generator_instance
 # HMRunInstance = make_generator_instance(interaction_model_by_tag['QGSJET01C']) 
 
 # mtag = list(interaction_model_by_tag.keys())[19]
-HMRunInstance = make_generator_instance(interaction_model_by_tag[mtag])
+HMRuns = {}
 
-# Some arbitrary initialization
-init_event_kinematics = EventKinematics(
-    elab=1e12,    # high enough energy to cover all energies the propagation will use
-    p1pdg=2212,
-    p2pdg=2212
-)
-HMRunInstance.init_generator(init_event_kinematics, seed=100001)  # fixed seed for now
+def get_hi_generator(tag):
+    """Manages hadronic models, there cannot be 
+    two concurrent instances of the same model.
+    """
+    if tag not in HMRuns:
+        HMRuns[tag] = make_generator_instance(interaction_model_by_tag[tag])
+
+        # Some arbitrary initialization
+        init_event_kinematics = EventKinematics(
+            elab=1e12,    # high enough energy to cover all energies the propagation will use
+            p1pdg=2212,
+            p2pdg=2212
+        )
+
+        HMRuns[tag].init_generator(init_event_kinematics, seed=100001)  # fixed seed for now
+
+    return HMRuns[tag]
+
+HMRunInstance = get_hi_generator(mtag)
+
 
 class HadronicInteractions(Module):
     '''Prototype class to handle hadronic interactions
@@ -60,7 +73,7 @@ class HadronicInteractions(Module):
         self.event_kinematics = init_event_kinematics
 
         if seed is None:
-            self.random_number_generator = Random()  # using th eponymous class from CRPropa
+            self.random_number_generator = Random()  # using the eponymous class from CRPropa
         else:
             self.random_number_generator = Random(seed)
     
