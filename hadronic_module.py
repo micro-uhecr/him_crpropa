@@ -9,7 +9,8 @@
 import sys
 from numpy import pi, log, sign, sqrt
 from scipy.spatial.transform import Rotation as R
-from crpropa import c_light, GeV, Module, ParticleState, Candidate, Vector3d, Random, mass_proton
+from crpropa import c_light, GeV, mass_proton
+from crpropa import Module, ParticleState, Candidate, Vector3d, Random
 
 from config_file import *
 sys.path.append(impy_directory)
