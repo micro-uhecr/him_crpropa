@@ -175,19 +175,23 @@ class HadronicInteractions(Module):
 
         # TODO: since generating only one event, use method event_generator instead!
         event = list(self.hadronic_model.event_generator(event_kinematics, 1))[0]
+        
+        # TODO: report filter_final_state() does not account for stable config        
         event.filter_final_state()
-
+        
         # Filtering particles. TODO: implement as input to function
-        mask = abs(event.xf) > 0.1
-
-        event_kinematics.boost_cms_to_lab(event)
+        mask = (abs(event.xf) > 0.1) * \
+            (event.en > Emin)
 
         secondaries = [sec_properties for sec_properties in 
             zip(event.p_ids[mask], 
                 event.en[mask], 
                 event.px[mask], 
                 event.py[mask], 
-                event.pz[mask])]
+                event.pz[mask]) 
+                if sec_properties[0] in allowed_secondaries]
+        
+        # TODO: Implement substituting not allowed secondaries by allowed products
 
         return secondaries
 
@@ -215,4 +219,4 @@ def get_orthonormal_base(vector3d, random_angle):
     vector2 = vector2.getRotated(vector1, random_angle)
     vector3 = vector3.getRotated(vector1, random_angle)
 
-        return secondaries
+    return vector1, vector2, vector3
