@@ -9,7 +9,7 @@
 import sys
 from numpy import pi, log, sign, sqrt
 from scipy.spatial.transform import Rotation as R
-from crpropa import c_light, GeV, Module, ParticleState, Candidate, Vector3d, Random
+from crpropa import c_light, GeV, Module, ParticleState, Candidate, Vector3d, Random, mass_proton
 
 from config_file import *
 sys.path.append(impy_directory)
@@ -53,7 +53,7 @@ class HadronicInteractions(Module):
             - distribution   : a list containing (str distribution_type, *distribution_args)
         """
         Module.__init__(self)
-        self.matter_density = matter_density
+        self.matter_density = matter_density  # in m-3
         self.composition = composition
         self.cross_section = 1e-30  # in m2
         self.hadronic_model = HMRunInstance
@@ -96,17 +96,24 @@ class HadronicInteractions(Module):
 
             interaction_occurred = current_step > interaction_step
             
-            if not interaction_occurred:
+        if interaction_occurred:
+            candidate.limitNextStep(interaction_step)
+
+            plab = candidate.current.getMomentum().getR()
+            g = candidate.current.getLorentzFactor()
+
+            Ecm = mass_proton * sqrt( 2*(g + 1) )
+            if Ecm < Ecm_min * GeV:
                 return
             else:
                 # candidate.limitNextStep(interaction_step)
                 plab = candidate.current.getMomentum().getR() / GeV * c_light
 
-                event_kinematics = EventKinematics(
-                    plab =  plab, # projectile momentum, lab frame
-                    p1pdg = 2212, p2pdg = 2212) # p-p interaction
-                                    
-                secondaries = self.sample_interaction(event_kinematics)
+            event_kinematics = EventKinematics(
+                plab =  plab / GeV * c_light, # projectile momentum, lab frame, GeV/c
+                p1pdg = 2212, p2pdg = 2212) # p-p interaction
+
+            secondaries = self.sample_interaction(event_kinematics)
                 # Define an arbitrary orthogonal base using the primary direction and arbitrary zenith
                 random_angle = 2 * pi * self.random_number_generator.rand()
                 vector1, vector2, vector3 = get_orthonormal_base(candidate.current.getDirection(), random_angle)
