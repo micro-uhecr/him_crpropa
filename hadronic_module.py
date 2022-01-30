@@ -78,11 +78,8 @@ class HadronicInteractions(Module):
         """This is the function called to operate on candidates (particles)
         and at the moment only works with protons!!!
         """
-        # Skip if not a proton!!! or too low energy for the Hadr. Model
-        if abs(candidate.current.getId()) not in \
-            [ 1000010010, # protons
-              1000000010, # neutrons
-            ] or candidate.current.getEnergy() < Emin * GeV:
+        
+        if candidate.current.getId() not in allowed_primaries:
             return
         
         current_step = candidate.getCurrentStep()
@@ -90,12 +87,12 @@ class HadronicInteractions(Module):
         Sigma = self._compute_interaction_rates()
 
         while current_step > 0:
-            # Sampling interaction from the inverse of an exponential distribution
-            random_number = self.random_number_generator.rand()
-            interaction_step = - log(random_number) / Sigma  # ToDo: optimize sampling for a good range 
+        # Sampling interaction from the inverse of an exponential distribution
+        random_number = self.random_number_generator.rand()
+        interaction_step = - log(random_number) / Sigma  # ToDo: optimize sampling for a good range 
 
-            interaction_occurred = current_step > interaction_step
-            
+        interaction_occurred = interaction_step < current_step
+        
         if interaction_occurred:
             candidate.limitNextStep(interaction_step)
 
@@ -114,11 +111,17 @@ class HadronicInteractions(Module):
                 p1pdg = 2212, p2pdg = 2212) # p-p interaction
 
             secondaries = self.sample_interaction(event_kinematics)
-                # Define an arbitrary orthogonal base using the primary direction and arbitrary zenith
-                random_angle = 2 * pi * self.random_number_generator.rand()
-                vector1, vector2, vector3 = get_orthonormal_base(candidate.current.getDirection(), random_angle)
 
-                for (pid, en, px, py, pz) in secondaries:
+            # Arbitrary orthogonal base aligned to primary direction
+            random_angle = 2 * pi * self.random_number_generator.rand()
+            primary_direction = candidate.current.getDirection()
+            vector1, vector2, vector3 = get_orthonormal_base(primary_direction, random_angle)
+
+            # Set interaction position
+            primary_direction.setR(interaction_step)
+            interaction_position  = candidate.current.getPosition() + primary_direction
+
+            for (pid, en, px, py, pz) in secondaries:
                     if pid not in \
                         [     22,             # gamma  
                               11, -11,        # electron, positron
@@ -128,42 +131,32 @@ class HadronicInteractions(Module):
                         ]:
                         continue
 
-                    # Injecting secondaries to CRPropa stack
-                    ps = ParticleState()
+                # Injecting secondaries to CRPropa stack
+                ps = ParticleState()
+                ps.setEnergy(en * GeV)
 
-                    if abs(pid) == 2212:
-                        ps.setId(int(sign(pid) * 1000010010)) # crpropa issue with (anti)protons id
-                    elif abs(pid) == 2112:
-                        ps.setId(int(sign(pid) * 1000000010)) # crpropa issue with (anti)neutrons id
-                    else:
-                        ps.setId(int(pid))
+                if abs(pid) == 2212:
+                    ps.setId(int(sign(pid) * 1000010010)) # crpropa issue with (anti)protons id
+                elif abs(pid) == 2112:
+                    ps.setId(int(sign(pid) * 1000000010)) # crpropa issue with (anti)neutrons id
+                else:
+                    ps.setId(int(pid))
 
-                    ps.setPosition(candidate.current.getPosition())
-                    ps.setEnergy(en * GeV)
-                                        
-                    # Define orthogonal vector base with arbitrary orientation, but z along the primary direction 
-                    vector1 = candidate.current.getDirection().getUnitVector()
-                    vector2 = Vector3d(1, 0, 0).cross(candidate.current.getDirection().getUnitVector())
-                    vector3 = vector1.cross(vector2)
-                    
-                    # Rotate the transversal plane a random angle
-                    random_angle = 2 * pi * self.random_number_generator.rand()
-                    vector2 = vector2.getRotated(vector1, random_angle)
-                    vector3 = vector3.getRotated(vector1, random_angle)
+                ps.setPosition(interaction_position)                
+                                    
+                # Set lengths to secondary momentum components
+                ptot = sqrt(px**2 + py**2 + pz**2)
+                vector1.setR(pz / ptot)
+                vector2.setR(px / ptot)
+                vector3.setR(py / ptot)
 
-                    # Set lengths to secondary momentum components
-                    ptot = sqrt(px**2 + py**2 + pz**2)
-                    vector1.setR(pz / ptot)
-                    vector2.setR(px / ptot)
-                    vector3.setR(py / ptot)
+                # Add components to get the resulting momentum of the secondary
+                Secondary_Direction = vector1 + vector2 + vector3
+                Secondary_Direction.setR(1)  # ensure norm
+                
+                ps.setDirection(Secondary_Direction)
 
-                    # Add components to get the resulting momentum of the secondary
-                    Secondary_Direction = vector1 + vector2 + vector3
-                    Secondary_Direction.setR(1)  # ensure norm
-                    
-                    ps.setDirection(Secondary_Direction)
-
-                    candidate.addSecondary(Candidate(ps)) # adding secondary to parent's particle stack
+                candidate.addSecondary(Candidate(ps)) # adding secondary to parent's particle stack
 
                 # Remove the covered distance
                 current_step -= interaction_step
