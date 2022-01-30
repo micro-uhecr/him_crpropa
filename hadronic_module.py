@@ -19,8 +19,7 @@ from impy import impy_config
 from impy.definitions import interaction_model_by_tag, make_generator_instance
 
 
-# impy_config["user_frame"] = 'center-of-mass'
-impy_config['stable_list'] = []  # no short-lived particles (t < 1h)
+# impy_config["user_frame"] = 'laboratory'  # this is not working for some reason
 
 
 # IMP!!! Currently only a global instance of the generator can be employed1!
