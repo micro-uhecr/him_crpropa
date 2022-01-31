@@ -113,13 +113,14 @@ class HadronicInteractions(Module):
             plab = candidate.current.getMomentum().getR()
             g = candidate.current.getLorentzFactor()
 
-            Ecm = mass_proton * sqrt( 2*(g + 1) )
+            Ecm = mass_proton * c_light**2 * sqrt( 2*(g + 1) )
             if Ecm < Ecm_min * GeV:
                 return
             else:
                 # candidate.limitNextStep(interaction_step)
                 plab = candidate.current.getMomentum().getR() / GeV * c_light
 
+            plab = candidate.current.getMomentum().getR()
             event_kinematics = EventKinematics(
                 plab =  plab / GeV * c_light, # projectile momentum, lab frame, GeV/c
                 p1pdg = 2212, p2pdg = 2212) # p-p interaction
@@ -181,7 +182,7 @@ class HadronicInteractions(Module):
         """
 
         # TODO: since generating only one event, use method event_generator instead!
-        event = list(self.hadronic_model.event_generator(event_kinematics, 1))[0]
+        event = list(HMRunInstance.event_generator(event_kinematics, 1))[0]
         
         # TODO: report filter_final_state() does not account for stable config        
         event.filter_final_state()
