@@ -112,9 +112,10 @@ class HadronicInteractions(Module):
 
             plab = candidate.current.getMomentum().getR()
             g = candidate.current.getLorentzFactor()
+            m = candidate.current.getMass()
 
-            Ecm = mass_proton * c_light**2 * sqrt( 2*(g + 1) )
-            if Ecm < Ecm_min * GeV:
+            Ecm = m * c_light**2 * sqrt( 2*(g + 1) )
+            if not Ecm_min * GeV < Ecm < 1e7 * GeV: # using max s from sybil
                 return
             else:
                 # candidate.limitNextStep(interaction_step)
