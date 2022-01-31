@@ -20,14 +20,10 @@ def base_profile(Nsim=10, Np=100, density=1e17):
             HMRunInstance = get_hi_generator(hmodel)
 
             for simnum in range(1, Nsim):
-
-                Nprimaries = 10
-                output_filename = f"output_{hmodel}_Np{Nprimaries:}_{simnum:02d}.txt"
-
-                Random_seedThreads(1987)
+                output_filename = f"output_{hmodel}_Np{Np:}_{simnum:02d}.txt"
 
                 tstart = time.time()
-                TestRun1D_tracks(Nprimaries, output_filename, seed=None, density=density)
+                TestRun1D_tracks(Np, output_filename, seed=None, density=density)
                 dt = time.time() - tstart
 
                 tprofile[simnum, nhm] = dt
@@ -38,8 +34,17 @@ def base_profile(Nsim=10, Np=100, density=1e17):
 
 
 if __name__ == "__main__":
+    import os
 
-    base_profile()
+    for d in np.logspace(14, 21, 10):
+        dirname = f'density={d:3.2e}'
+        os.makedirs(dirname, exist_ok=True)
+
+        base_profile(Np=10)
+
+        for filename in os.listdir('./'):
+            if filename.startswith('output') and filename.endswith('txt'):
+                os.rename(filename, os.path.join(dirname, filename))
 
 
     
