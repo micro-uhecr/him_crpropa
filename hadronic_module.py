@@ -9,14 +9,13 @@
 import sys
 from numpy import pi, log, sign, sqrt
 from scipy.spatial.transform import Rotation as R
-from crpropa import c_light, GeV, mass_proton
+from crpropa import c_light, GeV
 from crpropa import Module, ParticleState, Candidate, Vector3d, Random
 
 from config_file import *
 sys.path.append(impy_directory)
 
 from impy.kinematics import EventKinematics
-from impy import impy_config
 from impy.definitions import interaction_model_by_tag, make_generator_instance
 
 
@@ -49,7 +48,8 @@ def get_hi_generator(tag):
             p2pdg=2212
         )
 
-        HMRuns[tag].init_generator(init_event_kinematics, seed=100001)  # fixed seed for now
+        # HMRuns[tag].init_generator(init_event_kinematics, seed=100001)  # fixed seed for now
+        HMRuns[tag].init_generator(init_event_kinematics)  # fixed seed for now
 
     return HMRuns[tag]
 
@@ -70,8 +70,6 @@ class HadronicInteractions(Module):
         self.matter_density = matter_density  # in m-3
         self.composition = composition
         self.cross_section = 1e-30  # in m2
-        self.hadronic_model = HMRunInstance
-        self.event_kinematics = init_event_kinematics
 
         if seed is None:
             self.random_number_generator = Random()  # using the eponymous class from CRPropa
@@ -87,7 +85,6 @@ class HadronicInteractions(Module):
 
         return self.matter_density * self.cross_section
 
-
     def process(self, candidate):
         """This is the function called to operate on candidates (particles)
         and at the moment only works with protons!!!
@@ -97,10 +94,8 @@ class HadronicInteractions(Module):
             return
         
         current_step = candidate.getCurrentStep()
-
         Sigma = self._compute_interaction_rates()
 
-        while current_step > 0:
         # Sampling interaction from the inverse of an exponential distribution
         random_number = self.random_number_generator.rand()
         interaction_step = - log(random_number) / Sigma  # ToDo: optimize sampling for a good range 
@@ -109,19 +104,9 @@ class HadronicInteractions(Module):
         
         if interaction_occurred:
             candidate.limitNextStep(interaction_step)
-
+            
             plab = candidate.current.getMomentum().getR()
-            g = candidate.current.getLorentzFactor()
-            m = candidate.current.getMass()
 
-            Ecm = m * c_light**2 * sqrt( 2*(g + 1) )
-            if not Ecm_min * GeV < Ecm < 1e7 * GeV: # using max s from sybil
-                return
-            else:
-                # candidate.limitNextStep(interaction_step)
-                plab = candidate.current.getMomentum().getR() / GeV * c_light
-
-            plab = candidate.current.getMomentum().getR()
             event_kinematics = EventKinematics(
                 plab =  plab / GeV * c_light, # projectile momentum, lab frame, GeV/c
                 p1pdg = 2212, p2pdg = 2212) # p-p interaction
@@ -134,19 +119,16 @@ class HadronicInteractions(Module):
             vector1, vector2, vector3 = get_orthonormal_base(primary_direction, random_angle)
 
             # Set interaction position
-            primary_direction.setR(interaction_step)
-            interaction_position  = candidate.current.getPosition() + primary_direction
+            step_back = current_step - interaction_step
+            xpos = step_back*primary_direction.x
+            ypos = step_back*primary_direction.y
+            zpos = step_back*primary_direction.z
+            interaction_position  = candidate.current.getPosition() - Vector3d(xpos, ypos, zpos)
 
-            for (pid, en, px, py, pz) in secondaries:
-                    if pid not in \
-                        [     22,             # gamma  
-                              11, -11,        # electron, positron
-                             211, 111, -211,  # pions
-                            -2112, 2112,      # (anti)neutron
-                            -2212, 2212,      # (anti)proton
-                        ]:
-                        continue
+            # TODO: Can't change primary position (below). why?
+            # candidate.current.setPosition(interaction_position)
 
+            for (pid, en, px, py, pz) in secondaries:   
                 # Injecting secondaries to CRPropa stack
                 ps = ParticleState()
                 ps.setEnergy(en * GeV)
@@ -162,20 +144,16 @@ class HadronicInteractions(Module):
                                     
                 # Set lengths to secondary momentum components
                 ptot = sqrt(px**2 + py**2 + pz**2)
-                vector1.setR(pz / ptot)
-                vector2.setR(px / ptot)
-                vector3.setR(py / ptot)
+                cpx = px/ptot * (vector1.x + vector2.x + vector3.x)
+                cpy = py/ptot * (vector1.y + vector2.y + vector3.y)
+                cpz = pz/ptot * (vector1.z + vector2.z + vector3.z)
 
                 # Add components to get the resulting momentum of the secondary
-                Secondary_Direction = vector1 + vector2 + vector3
-                Secondary_Direction.setR(1)  # ensure norm
+                Secondary_Direction = Vector3d(cpx, cpy, cpz)
+                Secondary_Direction.setR(1)  # enforce unitary norm
                 
                 ps.setDirection(Secondary_Direction)
-
                 candidate.addSecondary(Candidate(ps)) # adding secondary to parent's particle stack
-
-                # Remove the covered distance
-                current_step -= interaction_step
 
     def sample_interaction(self, event_kinematics):
         """Calls hadronic model using the interface from impy and 
