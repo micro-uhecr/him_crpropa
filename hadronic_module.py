@@ -92,7 +92,15 @@ class HadronicInteractions(Module):
         
         if candidate.current.getId() not in allowed_primaries:
             return
-        
+
+        plab = candidate.current.getMomentum().getR()
+        event_kinematics = EventKinematics(
+            plab =  plab / GeV * c_light, # projectile momentum, lab frame, GeV/c
+            p1pdg = 2212, p2pdg = 2212) # p-p interaction
+
+        if not (Ecm_min < event_kinematics.ecm < Ecm_max):
+            return
+
         current_step = candidate.getCurrentStep()
         Sigma = self._compute_interaction_rates()
 
@@ -103,14 +111,7 @@ class HadronicInteractions(Module):
         interaction_occurred = interaction_step < current_step
         
         if interaction_occurred:
-            candidate.limitNextStep(interaction_step)
-            
-            plab = candidate.current.getMomentum().getR()
-
-            event_kinematics = EventKinematics(
-                plab =  plab / GeV * c_light, # projectile momentum, lab frame, GeV/c
-                p1pdg = 2212, p2pdg = 2212) # p-p interaction
-
+            # Sample colission and get secondaries 
             secondaries = self.sample_interaction(event_kinematics)
 
             # Arbitrary orthogonal base aligned to primary direction
@@ -120,13 +121,14 @@ class HadronicInteractions(Module):
 
             # Set interaction position
             step_back = current_step - interaction_step
-            xpos = step_back*primary_direction.x
-            ypos = step_back*primary_direction.y
-            zpos = step_back*primary_direction.z
+            xpos = step_back * primary_direction.x
+            ypos = step_back * primary_direction.y
+            zpos = step_back * primary_direction.z
             interaction_position  = candidate.current.getPosition() - Vector3d(xpos, ypos, zpos)
 
             # TODO: Can't change primary position (below). why?
             # candidate.current.setPosition(interaction_position)
+            candidate.limitNextStep(interaction_step)
 
             for (pid, en, px, py, pz) in secondaries:   
                 # Injecting secondaries to CRPropa stack
@@ -170,6 +172,7 @@ class HadronicInteractions(Module):
         mask = (abs(event.xf) > 0.1) * \
             (event.en > Emin)
 
+        # TODO: Implement substituting not allowed secondaries by its allowed decay products
         secondaries = [sec_properties for sec_properties in 
             zip(event.p_ids[mask], 
                 event.en[mask], 
@@ -177,7 +180,7 @@ class HadronicInteractions(Module):
                 event.py[mask], 
                 event.pz[mask]) 
                 if sec_properties[0] in allowed_secondaries]
-        
+
         # TODO: Implement substituting not allowed secondaries by allowed products
 
         return secondaries
@@ -186,23 +189,33 @@ class HadronicInteractions(Module):
 def get_orthonormal_base(vector3d, random_angle):
     """Returns a vector orthonormal base where one of the directions
     is aligned to vector3d, and the other two have arbitrary orientation.
-    In other words, this function returns three vectors that are normalized, 
-    othogonal to each other, and have arbitrary orientation apart from the 
-    provided vector3d.
+    The vectors are 
+    v1: the vector provided, (x, y, z)
+    v2: a vector perpendicular (z-y, x-z, y-x), normalized
+    v3: the cross product of v1 and v2
+
+    This method fails in the case of x=y=z=sqrt(3)/3, where the function returns
+    v2: sqrt(2)/2, sqrt(2)/2, 0
+    v3: the cross product of v1 and v2
     """
 
     vector3d.setR(1)
     vector1 = vector3d
+    vector1.setR(1)
     x, y, z = vector1.x, vector1.y, vector1.z
-    vector2 = Vector3d(x + y, z + y, 
-                       -(x**2 + y**2 + y*(x + z))/z) # orthogonal to vector1
+
+    norm = sqrt( 2*(1 - x*y - y*z - z*x) )
+
+    if abs(norm) > 1e-6:
+        vector2 = Vector3d(z - y, x - z, y - x)  # orthogonal to vector1
+        vector2.setR(norm)
+    else:
+        # only possible when x=y=z=sqrt(3)/3
+        vector2 = Vector3d(1/sqrt(2), -1/sqrt(2), 0) # orthogonal to vector1
+
     vector3 = vector1.cross(vector2) # orthogonal to both vector1 and vector2
 
-    # Normalize base
-    vector2.setR(1)
-    vector3.setR(1)
-
-    # Rotate the transversal plane to vector1 by a random angle
+    # Rotate the plane transversal to vector1 by a random angle
     vector2 = vector2.getRotated(vector1, random_angle)
     vector3 = vector3.getRotated(vector1, random_angle)
 
