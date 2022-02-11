@@ -22,16 +22,6 @@ from impy.definitions import interaction_model_by_tag, make_generator_instance
 # impy_config["user_frame"] = 'laboratory'  # this is not working for some reason
 
 
-# IMP!!! Currently only a global instance of the generator can be employed1!
-# The instance below is used for the moment
-# HMRunInstance = make_generator_instance(interaction_model_by_tag['SIBYLL23D'])
-# HMRunInstance = make_generator_instance(interaction_model_by_tag['EPOSLHC'])  # 1000 times slower
-# HMRunInstance = make_generator_instance(interaction_model_by_tag['PHOJET112'])
-# HMRunInstance = make_generator_instance(interaction_model_by_tag['URQMD34'])  # 100 times slower
-# HMRunInstance = make_generator_instance(interaction_model_by_tag['PYTHIA8'])  # weird behavior
-# HMRunInstance = make_generator_instance(interaction_model_by_tag['QGSJET01C']) 
-
-# mtag = list(interaction_model_by_tag.keys())[19]
 HMRuns = {}
 
 def get_hi_generator(tag):
@@ -181,8 +171,6 @@ class HadronicInteractions(Module):
                 event.pz[mask]) 
                 if sec_properties[0] in allowed_secondaries]
 
-        # TODO: Implement substituting not allowed secondaries by allowed products
-
         return secondaries
 
 
@@ -199,7 +187,6 @@ def get_orthonormal_base(vector3d, random_angle):
     v3: the cross product of v1 and v2
     """
 
-    vector3d.setR(1)
     vector1 = vector3d
     vector1.setR(1)
     x, y, z = vector1.x, vector1.y, vector1.z

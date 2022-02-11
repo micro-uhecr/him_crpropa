@@ -30,21 +30,26 @@ def base_profile(Nsim=10, Np=100, density=1e17):
 
                 pbar.update(100 * Nsim/len(hmodel_list))
 
-    np.savetxt('time_profile_' + ('_'.join(hmodel_list) + '.txt'), tprofile)
+        np.savetxt('time_profile_' + ('_'.join(hmodel_list) + '.txt'), tprofile)
 
 
 if __name__ == "__main__":
     import os
 
-    for d in np.logspace(14, 21, 10):
+    density_grid = np.logspace(15, 30, 30, endpoint=False)
+
+    for d in density_grid[:]:
         dirname = f'density={d:3.2e}'
         os.makedirs(dirname, exist_ok=True)
 
-        base_profile(Np=10)
+        base_profile(Nsim=10, Np=1000)
 
         for filename in os.listdir('./'):
             if filename.startswith('output') and filename.endswith('txt'):
                 os.rename(filename, os.path.join(dirname, filename))
+
+        tprof_filename = 'time_profile_' + ('_'.join(hmodel_list) + '.txt')
+        os.rename(tprof_filename, os.path.join(dirname, tprof_filename))
 
 
     
