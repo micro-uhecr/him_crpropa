@@ -15,7 +15,7 @@ impy_directory = '/home/leonel/GitProjects/impy/'
 # TODO: Take this from impy config, for the respective HImodel 
 # Minimal ecm to model hadronic interaction
 Ecm_min = 10 # GeV,  10 GeV for SIBYLL23D
-Ecm_min = 1e7 # GeV, 1E7 GeV for SIBYLL23D
+Ecm_max = 1e7 # GeV, 1E7 GeV for SIBYLL23D
 
 # Minimal energy for secondaries produced in hadronic interaction
 Emin = 10 # GeV
