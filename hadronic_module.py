@@ -7,7 +7,7 @@
 """
 
 import sys
-from numpy import pi, log, sign, sqrt
+from numpy import pi, log, log10, sign, sqrt
 from scipy.spatial.transform import Rotation as R
 from crpropa import c_light, GeV
 from crpropa import Module, ParticleState, Candidate, Vector3d, Random
@@ -38,8 +38,8 @@ def get_hi_generator(tag):
             p2pdg=2212
         )
 
-        # HMRuns[tag].init_generator(init_event_kinematics, seed=100001)  # fixed seed for now
-        HMRuns[tag].init_generator(init_event_kinematics)  # fixed seed for now
+        HMRuns[tag].init_generator(init_event_kinematics, seed=100001)  # fixed seed for now
+        # HMRuns[tag].init_generator(init_event_kinematics)  # fixed seed for now
 
     return HMRuns[tag]
 
@@ -66,14 +66,28 @@ class HadronicInteractions(Module):
         else:
             self.random_number_generator = Random(seed)
     
-    def _compute_interaction_rates(self):
+    def _compute_interaction_rates(self, plab):
         """Determine the hadronic rates based on inputs: matter density,
         distribution, temperature, and composition.
         """ 
         # ToDo: employ distribution to describe the energy distribution of the target particles
-        # ToDo: Compute interaction cross rates based on input parameters
 
-        return self.matter_density * self.cross_section
+        def f(p, H, M):
+            P, R1, R2 = 34.41, 13.07, 7.394 # in mb
+            eta1, eta2 = 0.4473, 0.5486
+
+            ecm2 = p**2 + 2*0.931**2
+            sab = (2*0.931 + M)**2
+
+            return H * log10(ecm2/sab)**2 + P + R1*(ecm2/sab)**-eta1 + R2*(ecm2/sab)**-eta2
+
+        pargs = [ 0.30753328, -0.32264095]
+        # ToDo: Compute interaction cross rates based on input parameters
+        sigma = f(plab, *pargs) * 1e-31 # to m2
+
+        # return self.matter_density * self.cross_section
+        return self.matter_density * sigma
+
 
     def process(self, candidate):
         """This is the function called to operate on candidates (particles)
@@ -92,7 +106,7 @@ class HadronicInteractions(Module):
             return
 
         current_step = candidate.getCurrentStep()
-        Sigma = self._compute_interaction_rates()
+        Sigma = self._compute_interaction_rates(plab)
 
         # Sampling interaction from the inverse of an exponential distribution
         random_number = self.random_number_generator.rand()
@@ -159,8 +173,10 @@ class HadronicInteractions(Module):
         event.filter_final_state()
         
         # Filtering particles. TODO: implement as input to function
-        mask = (abs(event.xf) > 0.1) * \
-            (event.en > Emin)
+        # mask = (abs(event.xf) > 0.1) * \
+        #     (event.en > Emin)
+
+        mask = event.en > 0
 
         # TODO: Implement substituting not allowed secondaries by its allowed decay products
         secondaries = [sec_properties for sec_properties in 
