@@ -130,11 +130,9 @@ class HadronicInteractions(Module):
             zpos = step_back * primary_direction.z
             interaction_position  = candidate.current.getPosition() - Vector3d(xpos, ypos, zpos)
 
-            # TODO: Can't change primary position (below). why?
-            # candidate.current.setPosition(interaction_position)
-            candidate.limitNextStep(interaction_step)
-
-            for (pid, en, px, py, pz) in secondaries:   
+            Eloss = 0
+            for (pid, en, px, py, pz) in secondaries:
+                Eloss += en * GeV
                 # Injecting secondaries to CRPropa stack
                 ps = ParticleState()
                 ps.setEnergy(en * GeV)
@@ -160,6 +158,11 @@ class HadronicInteractions(Module):
                 
                 ps.setDirection(Secondary_Direction)
                 candidate.addSecondary(Candidate(ps)) # adding secondary to parent's particle stack
+
+            # TODO: Can't change primary position (below). why?
+            # candidate.current.setPosition(interaction_position)
+            candidate.limitNextStep(interaction_step)
+            candidate.current.setEnergy(candidate.current.getEnergy() - Eloss)            
 
     def sample_interaction(self, event_kinematics):
         """Calls hadronic model using the interface from impy and 
