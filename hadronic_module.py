@@ -162,7 +162,9 @@ class HadronicInteractions(Module):
             # TODO: Can't change primary position (below). why?
             # candidate.current.setPosition(interaction_position)
             candidate.limitNextStep(interaction_step)
-            candidate.current.setEnergy(candidate.current.getEnergy() - Eloss)            
+
+            currE = candidate.current.getEnergy()
+            candidate.current.setEnergy(currE - Eloss)
 
     def sample_interaction(self, event_kinematics):
         """Calls hadronic model using the interface from impy and 
