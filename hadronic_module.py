@@ -6,8 +6,9 @@
     Leonel Morejon
 """
 
+from re import M
 import sys
-from numpy import pi, log, log10, sign, sqrt
+from numpy import pi, log, sign, sqrt
 from scipy.spatial.transform import Rotation as R
 from crpropa import c_light, GeV
 from crpropa import Module, ParticleState, Candidate, Vector3d, Random
@@ -72,18 +73,28 @@ class HadronicInteractions(Module):
         """ 
         # ToDo: employ distribution to describe the energy distribution of the target particles
 
-        def f(p, H, M):
+        def sigma_pp(plab):
+            """Cross section for proton-proton interactions based on the PDG fit, as
+            a function of the laboratory momentum plab in GeV.
+
+            Reference: C. Patrignani 2016 Chinese Phys. C 40 100001
+            """
+            mp = 0.938272 # GeV
+            M = 2.1206 # GeV
+            H = 0.272 # mb
             P, R1, R2 = 34.41, 13.07, 7.394 # in mb
-            eta1, eta2 = 0.4473, 0.5486
+            eta1, eta2 = 0.4473, 0.5486 # dimenssionless
 
-            ecm2 = p**2 + 2*0.931**2
-            sab = (2*0.931 + M)**2
+            ecm2 = 2*(mp**2 + mp*sqrt(plab**2 + mp**2)) # GeV
+            sab = (2*mp + M)**2 # GeV
 
-            return H * log10(ecm2/sab)**2 + P + R1*(ecm2/sab)**-eta1 + R2*(ecm2/sab)**-eta2
+            xsec = H * log(ecm2/sab)**2 + P + R1*(ecm2/sab)**-eta1 - R2*(ecm2/sab)**-eta2
 
-        pargs = [ 0.30753328, -0.32264095]
+            return xsec 
+
+
         # ToDo: Compute interaction cross rates based on input parameters
-        sigma = f(plab, *pargs) * 1e-31 # to m2
+        sigma = sigma_pp(plab) * 1e-31 # to m2
 
         # return self.matter_density * self.cross_section
         return self.matter_density * sigma
