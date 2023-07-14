@@ -1,5 +1,5 @@
 # Hadronic Interactions Module (HIM) for CRPropa
 
-A (prototype) implementation of hadronic interactions in crpropa based on [impy](https://github.com/impy-project).
+A (prototype) implementation of hadronic interactions in crpropa based on [chromo](https://github.com/impy-project/chromo).
 
-Still under testing, but a release version will be issued by December 2022.
+A release version is in preparation.
