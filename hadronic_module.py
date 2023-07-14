@@ -6,46 +6,38 @@
     Leonel Morejon
 """
 
-from re import M
 import sys
 from numpy import pi, log, sign, sqrt
 from scipy.spatial.transform import Rotation as R
 from crpropa import c_light, GeV
 from crpropa import Module, ParticleState, Candidate, Vector3d, Random
 
+import chromo
 from config_file import *
-sys.path.append(impy_directory)
-
-from impy.kinematics import EventKinematics
-from impy.definitions import interaction_model_by_tag, make_generator_instance
-
-
-# impy_config["user_frame"] = 'laboratory'  # this is not working for some reason
+from chromo.models import *
+from chromo.kinematics import EventKinematics
+from chromo.util import elab2ecm
 
 
-HMRuns = {}
-
-def get_hi_generator(tag):
+def get_hi_generator(modelname, initseed):
     """Manages hadronic models, there cannot be 
     two concurrent instances of the same model.
     """
-    if tag not in HMRuns:
-        HMRuns[tag] = make_generator_instance(interaction_model_by_tag[tag])
+    if modelname not in chromo.models.__all__:
+        print('ERROR: Wrong model or model not available.')
+        return
 
-        # Some arbitrary initialization
-        init_event_kinematics = EventKinematics(
-            elab=1e12,    # high enough energy to cover all energies the propagation will use
-            p1pdg=2212,
-            p2pdg=2212
-        )
+    # Some arbitrary initialization
+    init_event_kinematics = EventKinematics(
+        'proton',
+        'proton',
+        elab=1e12,    # GeV, high enough energy to cover all energies the propagation will use
+    )
 
-        HMRuns[tag].init_generator(init_event_kinematics, seed=100001)  # fixed seed for now
-        # HMRuns[tag].init_generator(init_event_kinematics)  # fixed seed for now
+    return globals()[modelname](init_event_kinematics, seed=initseed)
 
-    return HMRuns[tag]
-
-HMRunInstance = get_hi_generator(mtag)
-
+HMRunInstance = get_hi_generator('Sibyll23d', 100001)
+# allowed_primaries = HMRunInstance.projectiles
 
 class HadronicInteractions(Module):
     '''Prototype class to handle hadronic interactions
@@ -60,64 +52,54 @@ class HadronicInteractions(Module):
         Module.__init__(self)
         self.matter_density = matter_density  # in m-3
         self.composition = composition
-        self.cross_section = 1e-30  # in m2
+        # self.cross_section = 1e-30  # in m2
 
         if seed is None:
             self.random_number_generator = Random()  # using the eponymous class from CRPropa
         else:
             self.random_number_generator = Random(seed)
     
-    def _compute_interaction_rates(self, plab):
+    def _compute_interaction_rates(self, kinematics):
         """Determine the hadronic rates based on inputs: matter density,
         distribution, temperature, and composition.
         """ 
         # ToDo: employ distribution to describe the energy distribution of the target particles
-
-        def sigma_pp(plab):
-            """Cross section for proton-proton interactions based on the PDG fit, as
-            a function of the laboratory momentum plab in GeV.
-
-            Reference: C. Patrignani 2016 Chinese Phys. C 40 100001
-            """
-            mp = 0.938272 # GeV
-            M = 2.1206 # GeV
-            H = 0.272 # mb
-            P, R1, R2 = 34.41, 13.07, 7.394 # in mb
-            eta1, eta2 = 0.4473, 0.5486 # dimenssionless
-
-            ecm2 = 2*(mp**2 + mp*sqrt(plab**2 + mp**2)) # GeV
-            sab = (2*mp + M)**2 # GeV
-
-            xsec = H * log(ecm2/sab)**2 + P + R1*(ecm2/sab)**-eta1 - R2*(ecm2/sab)**-eta2
-
-            return xsec 
-
-
         # ToDo: Compute interaction cross rates based on input parameters
-        sigma = sigma_pp(plab) * 1e-31 # to m2
+
+        # sigma = sigma_pp(plab) * 1e-31 # to m2
+        sigma = HMRunInstance.cross_section(kinematics).total * 1e-31 # to m2
 
         # return self.matter_density * self.cross_section
         return self.matter_density * sigma
-
 
     def process(self, candidate):
         """This is the function called to operate on candidates (particles)
         and at the moment only works with protons!!!
         """
-        
-        if candidate.current.getId() not in allowed_primaries:
-            return
+        projectile_id = candidate.current.getId()
 
+        if abs(projectile_id) == 1000010010:
+            projectile_id = int(sign(projectile_id) * 2212)
+        elif abs(projectile_id) == 1000000010:
+            projectile_id = int(sign(projectile_id) * 2112)
+
+        if projectile_id not in allowed_primaries:
+            return
+        
+        # Set kinematics of of interaction
+        # kinematics1 = chromo.kinematics.FixedTarget(1e6 * chromo.constants.TeV, (14, 1), "proton")
+        # kinematics2 = chromo.kinematics.CenterOfMass(kinematics1.ecm, 'proton', (14, 1)) # swapping target and projectile
         plab = candidate.current.getMomentum().getR()
         event_kinematics = EventKinematics(
-            plab =  plab / GeV * c_light, # projectile momentum, lab frame, GeV/c
-            p1pdg = 2212, p2pdg = 2212) # p-p interaction
+            projectile_id, 'proton', # only p as target for the moment
+            plab =  plab / GeV * c_light) # projectile momentum, lab frame, GeV/c
 
         if not (Ecm_min < event_kinematics.ecm < Ecm_max):
             return
 
         current_step = candidate.getCurrentStep()
-        Sigma = self._compute_interaction_rates(plab)
+        Sigma = self._compute_interaction_rates(event_kinematics)
+        print(f'The interaction rate is {Sigma:3.2e}')
 
         # Sampling interaction from the inverse of an exponential distribution
         random_number = self.random_number_generator.rand()
@@ -181,12 +163,13 @@ class HadronicInteractions(Module):
         """Calls hadronic model using the interface from impy and 
         the member event_kinematics.
         """
-
-        # TODO: since generating only one event, use method event_generator instead!
-        event = list(HMRunInstance.event_generator(event_kinematics, 1))[0]
+        HMRunInstance.kinematics = event_kinematics
         
-        # TODO: report filter_final_state() does not account for stable config        
-        event.filter_final_state()
+        # TODO: since generating only one event, use method event_generator instead!
+        event = list(HMRunInstance(1))[0]
+
+        # TODO: report filter_final_state() does not account for stable config
+        event = event.final_state()
         
         # Filtering particles. TODO: implement as input to function
         # mask = (abs(event.xf) > 0.1) * \
@@ -196,7 +179,7 @@ class HadronicInteractions(Module):
 
         # TODO: Implement substituting not allowed secondaries by its allowed decay products
         secondaries = [sec_properties for sec_properties in 
-            zip(event.p_ids[mask], 
+            zip(event.pid[mask], 
                 event.en[mask], 
                 event.px[mask], 
                 event.py[mask], 
