@@ -6,20 +6,51 @@
     Leonel Morejon
 """
 
-import sys
-from numpy import pi, log, sign, sqrt
+from numpy import pi, log, sign, sqrt, array, cross, arccos, vstack, einsum, vectorize, logical_and
+from numpy.linalg import norm
 from scipy.spatial.transform import Rotation as R
-from crpropa import c_light, GeV
-from crpropa import Module, ParticleState, Candidate, Vector3d, Random
+from particle import Particle
 
-import chromo
+from crpropa import Candidate, GeV, Module, ParticleState, Vector3d, Random
+
 from config_file import *
+import chromo
 from chromo.models import *
 from chromo.kinematics import EventKinematics
-from chromo.util import elab2ecm
+from chromo.util import elab2ecm, CompositeTarget, EventFrame
 
+# Dealing with proton and neutron pid ambiguity
+def pdgid2crpropa(pid):
+    """Dealing with provblems due to equivalent
+    pid values for protons and neutrons 
+    """
+    relation = dict([
+        (2212, 1000010010), 
+        (2112, 1000000010),
+        (-2212, -1000010010),
+        (-2112, -1000000010) 
+    ])
+    if pid in relation:
+        return relation[pid]
+    else:
+        return pid
 
-def get_hi_generator(modelname, initseed):
+def crpropa2pdgid(pid):
+    """Dealing with provblems due to equivalent
+    pid values for protons and neutrons 
+    """
+    relation = dict([
+        (1000010010, 2212), 
+        (1000000010, 2112),
+        (-1000010010, -2212),
+        (-1000000010, -2112) 
+    ])
+    if pid in relation:
+        return relation[pid]
+    else:
+        return pid
+
+def get_hi_generator(modelname, initseed=None):
     """Manages hadronic models, there cannot be 
     two concurrent instances of the same model.
     """
@@ -36,15 +67,14 @@ def get_hi_generator(modelname, initseed):
 
     return globals()[modelname](init_event_kinematics, seed=initseed)
 
-HMRunInstance = get_hi_generator('Sibyll23d', 100001)
-# allowed_primaries = HMRunInstance.projectiles
+# HMRunInstance = get_hi_generator(mtag, 100001)
 
 class HadronicInteractions(Module):
     '''Prototype class to handle hadronic interactions
     '''
-    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000), seed=None):
+    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000), seed=None, Emin=1e6):
         """The initialization takes as arguments
-            - seed           : random numbergenerator seed
+            - seed           : random number generator seed
             - matter_density : the matter density in units of m-3
             - composition    : a dictionary {pid : particle_density} in arbitrary units
             - distribution   : a list containing (str distribution_type, *distribution_args)
@@ -52,12 +82,14 @@ class HadronicInteractions(Module):
         Module.__init__(self)
         self.matter_density = matter_density  # in m-3
         self.composition = composition
-        # self.cross_section = 1e-30  # in m2
+        self.Emin = Emin
 
         if seed is None:
             self.random_number_generator = Random()  # using the eponymous class from CRPropa
         else:
             self.random_number_generator = Random(seed)
+
+        self.hi_engine = get_hi_generator(mtag, seed)
     
     def _compute_interaction_rates(self, kinematics):
         """Determine the hadronic rates based on inputs: matter density,
@@ -67,7 +99,7 @@ class HadronicInteractions(Module):
         # ToDo: Compute interaction cross rates based on input parameters
 
         # sigma = sigma_pp(plab) * 1e-31 # to m2
-        sigma = HMRunInstance.cross_section(kinematics).total * 1e-31 # to m2
+        sigma = self.hi_engine.cross_section(kinematics).total * 1e-31 # to m2
 
         # return self.matter_density * self.cross_section
         return self.matter_density * sigma
@@ -76,30 +108,34 @@ class HadronicInteractions(Module):
         """This is the function called to operate on candidates (particles)
         and at the moment only works with protons!!!
         """
-        projectile_id = candidate.current.getId()
-
-        if abs(projectile_id) == 1000010010:
-            projectile_id = int(sign(projectile_id) * 2212)
-        elif abs(projectile_id) == 1000000010:
-            projectile_id = int(sign(projectile_id) * 2112)
-
-        if projectile_id not in allowed_primaries:
-            return
+        target = crpropa2pdgid(1000010010)
+        projectile = crpropa2pdgid(candidate.current.getId())
+        currE = candidate.current.getEnergy() / GeV # in GeV
         
-        # Set kinematics of of interaction
-        # kinematics1 = chromo.kinematics.FixedTarget(1e6 * chromo.constants.TeV, (14, 1), "proton")
-        # kinematics2 = chromo.kinematics.CenterOfMass(kinematics1.ecm, 'proton', (14, 1)) # swapping target and projectile
-        plab = candidate.current.getMomentum().getR()
-        event_kinematics = EventKinematics(
-            projectile_id, 'proton', # only p as target for the moment
-            plab =  plab / GeV * c_light) # projectile momentum, lab frame, GeV/c
+        m1 = Particle.from_pdgid(projectile).mass / 1e3 # in GeV
+        m2 = Particle.from_pdgid(target).mass / 1e3 # in GeV
+        Ecm = elab2ecm(currE, m1, m2)
+        evkin = chromo.kinematics.CenterOfMass(Ecm, target, projectile)
 
-        if not (Ecm_min < event_kinematics.ecm < Ecm_max):
+        # Invert particle order if projectile not allowed by generator
+        if projectile not in self.hi_engine.projectiles:
+            if (target in self.hi_engine.projectiles) and (projectile in self.hi_engine.targets):
+                # swapping target and projectile with equivalent c.m. energy
+                evkin = chromo.kinematics.CenterOfMass(Ecm, target, projectile)
+            else:
+                # Interaction not possible with chosen generator
+                return
+
+        # Set kinematics of of interaction
+        try:
+            self.hi_engine.kinematics = evkin
+        except:
+            # Avoiding all exceptions from generator due to kinematics (Emin, pid unavailable, etc.)
+            # Skipping step sampling if kinematics are not supported
             return
 
         current_step = candidate.getCurrentStep()
-        Sigma = self._compute_interaction_rates(event_kinematics)
-        print(f'The interaction rate is {Sigma:3.2e}')
+        Sigma = self._compute_interaction_rates(evkin)
 
         # Sampling interaction from the inverse of an exponential distribution
         random_number = self.random_number_generator.rand()
@@ -109,116 +145,62 @@ class HadronicInteractions(Module):
         
         if interaction_occurred:
             # Sample colission and get secondaries 
-            secondaries = self.sample_interaction(event_kinematics)
+            pids, energies, momenta = self.sample_interaction()
+            Eloss = energies.sum() * GeV
+            primary_direction = array(candidate.current.getDirection())
+
+            # Set interaction position in CRPropa corrdinate system
+            step_back = (current_step - interaction_step) * primary_direction
+            interaction_position  = candidate.current.getPosition() - Vector3d(step_back[0], step_back[1], step_back[2])
 
             # Arbitrary orthogonal base aligned to primary direction
-            random_angle = 2 * pi * self.random_number_generator.rand()
-            primary_direction = candidate.current.getDirection()
-            vector1, vector2, vector3 = get_orthonormal_base(primary_direction, random_angle)
+            random_phi = 2 * pi * self.random_number_generator.rand()            
+            arbitrary_phi_rotation = R.from_euler('z', random_phi).as_matrix()
+            rotation_axis = cross(array([0, 0, 1]), primary_direction)
+            theta = arccos(primary_direction[2]) # in radians
+            z_alignment_to_primary_direction = R.from_rotvec(theta * rotation_axis).as_matrix()
+            transformation = arbitrary_phi_rotation.dot(z_alignment_to_primary_direction)
 
-            # Set interaction position
-            step_back = current_step - interaction_step
-            xpos = step_back * primary_direction.x
-            ypos = step_back * primary_direction.y
-            zpos = step_back * primary_direction.z
-            interaction_position  = candidate.current.getPosition() - Vector3d(xpos, ypos, zpos)
+            momenta = momenta.dot(transformation)
 
-            Eloss = 0
-            for (pid, en, px, py, pz) in secondaries:
-                Eloss += en * GeV
-                # Injecting secondaries to CRPropa stack
-                ps = ParticleState()
-                ps.setEnergy(en * GeV)
+            for pid, en, pvector in zip(pids, energies, momenta):
+                # Injecting secondaries, adding secondary to parent's particle stack
+                direction = Vector3d(pvector[0], pvector[1], pvector[2])
+                ps = ParticleState(int(pid), en * GeV, interaction_position, direction)
+                candidate.addSecondary(Candidate(ps))
 
-                if abs(pid) == 2212:
-                    ps.setId(int(sign(pid) * 1000010010)) # crpropa issue with (anti)protons id
-                elif abs(pid) == 2112:
-                    ps.setId(int(sign(pid) * 1000000010)) # crpropa issue with (anti)neutrons id
-                else:
-                    ps.setId(int(pid))
-
-                ps.setPosition(interaction_position)                
-                                    
-                # Set lengths to secondary momentum components
-                ptot = sqrt(px**2 + py**2 + pz**2)
-                cpx = px/ptot * (vector1.x + vector2.x + vector3.x)
-                cpy = py/ptot * (vector1.y + vector2.y + vector3.y)
-                cpz = pz/ptot * (vector1.z + vector2.z + vector3.z)
-
-                # Add components to get the resulting momentum of the secondary
-                Secondary_Direction = Vector3d(cpx, cpy, cpz)
-                Secondary_Direction.setR(1)  # enforce unitary norm
-                
-                ps.setDirection(Secondary_Direction)
-                candidate.addSecondary(Candidate(ps)) # adding secondary to parent's particle stack
-
-            # TODO: Can't change primary position (below). why?
-            # candidate.current.setPosition(interaction_position)
+            # TODO: improve limiting step condition based on cross section
             candidate.limitNextStep(interaction_step)
 
-            currE = candidate.current.getEnergy()
-            candidate.current.setEnergy(currE - Eloss)
+            # TODO: Verify if primary should be deactivated
+            # candidate.current.setEnergy(currE - Eloss)
+            candidate.current.setEnergy(0)
 
-    def sample_interaction(self, event_kinematics):
-        """Calls hadronic model using the interface from impy and 
-        the member event_kinematics.
-        """
-        HMRunInstance.kinematics = event_kinematics
-        
+    def sample_interaction(self):
+        """Calls hadronic model and returns products
+           Returns:
+           - particles ids
+           - energies [in GeV]
+           - momenta as unitary vectors 
+        """        
         # TODO: since generating only one event, use method event_generator instead!
-        event = list(HMRunInstance(1))[0]
+        event = list(self.hi_engine(1))[0]
 
-        # TODO: report filter_final_state() does not account for stable config
         event = event.final_state()
         
-        # Filtering particles. TODO: implement as input to function
-        # mask = (abs(event.xf) > 0.1) * \
-        #     (event.en > Emin)
+        # Applying boost to lab frame
+        event.kin.apply_boost(event, EventFrame.FIXED_TARGET)
 
-        mask = event.en > 0
+        # Filtering particles
+        mask = logical_and(event.en > self.Emin, [pid in allowed_secondaries for pid in event.pid])
+        
+        energies = event.en[mask]
+        momenta = vstack([event.px[mask], event.py[mask], event.pz[mask]]).T
+        momenta = einsum('ij, i -> ij', momenta, 1 / norm(momenta, axis=1)) # normalizing
+        pids = [pdgid2crpropa(pid) for pid in event.pid[mask]] # Fixing some pid values
 
         # TODO: Implement substituting not allowed secondaries by its allowed decay products
-        secondaries = [sec_properties for sec_properties in 
-            zip(event.pid[mask], 
-                event.en[mask], 
-                event.px[mask], 
-                event.py[mask], 
-                event.pz[mask]) 
-                if sec_properties[0] in allowed_secondaries]
 
-        return secondaries
-
-
-def get_orthonormal_base(vector3d, random_angle):
-    """Returns a vector orthonormal base where one of the directions
-    is aligned to vector3d, and the other two have arbitrary orientation.
-    The vectors are 
-    v1: the vector provided, (x, y, z)
-    v2: a vector perpendicular (z-y, x-z, y-x), normalized
-    v3: the cross product of v1 and v2
-
-    This method fails in the case of x=y=z=sqrt(3)/3, where the function returns
-    v2: sqrt(2)/2, sqrt(2)/2, 0
-    v3: the cross product of v1 and v2
-    """
-
-    vector1 = vector3d
-    vector1.setR(1)
-    x, y, z = vector1.x, vector1.y, vector1.z
-
-    norm = sqrt( 2*(1 - x*y - y*z - z*x) )
-
-    if abs(norm) > 1e-6:
-        vector2 = Vector3d(z - y, x - z, y - x)  # orthogonal to vector1
-        vector2.setR(norm)
-    else:
-        # only possible when x=y=z=sqrt(3)/3
-        vector2 = Vector3d(1/sqrt(2), -1/sqrt(2), 0) # orthogonal to vector1
-
-    vector3 = vector1.cross(vector2) # orthogonal to both vector1 and vector2
-
-    # Rotate the plane transversal to vector1 by a random angle
-    vector2 = vector2.getRotated(vector1, random_angle)
-    vector3 = vector3.getRotated(vector1, random_angle)
-
-    return vector1, vector2, vector3
+        # return (pids[:4], event.en[:4], momenta[:4, :])
+        return (pids, energies, momenta)
+        # return (array([1000260560, 1000260560]), array([.1, .1]), array([[0, 0, 1], [0, 0, 1]]))
