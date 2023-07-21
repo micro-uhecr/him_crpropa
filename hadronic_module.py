@@ -6,9 +6,10 @@
     Leonel Morejon
 """
 
-from numpy import pi, log, sign, sqrt, array, cross, arccos, vstack, einsum, vectorize, logical_and
+from numpy import pi, log, sqrt, array, cross, arccos, vstack, einsum, vectorize, logical_and, logspace
 from numpy.linalg import norm
 from scipy.spatial.transform import Rotation as R
+from scipy.interpolate import interp1d
 from particle import Particle
 
 from crpropa import Candidate, GeV, Module, ParticleState, Vector3d, Random
@@ -16,7 +17,7 @@ from crpropa import Candidate, GeV, Module, ParticleState, Vector3d, Random
 from config_file import *
 import chromo
 from chromo.models import *
-from chromo.kinematics import EventKinematics
+from chromo.kinematics import EventKinematics, CenterOfMass
 from chromo.util import elab2ecm, CompositeTarget, EventFrame
 
 # Dealing with proton and neutron pid ambiguity
@@ -69,10 +70,42 @@ def get_hi_generator(modelname, initseed=None):
 
 # HMRunInstance = get_hi_generator(mtag, 100001)
 
+def sample_model_xsec(hi_generator):
+    """Sampling the model cross section for proton-proton 
+    interactions, as a function of the laboratory momentum 
+    plab in GeV. Returns xsec in milibarn.
+    """
+    csec_vals = []
+    ecm_vals = logspace(1, 6, 30)
+    plab_vals = []
+    for ecm in ecm_vals:
+        kin = CenterOfMass(ecm, "p", "p")
+        plab_vals.append(sqrt(kin.elab**2 - (kin.p1.A * .935)**2))
+        csec_vals.append(hi_generator.cross_section(kin).total)
+        
+    return interp1d(plab_vals, csec_vals)
+
+def sigma_pp(plab):
+    """Cross section for proton-proton interactions based on the PDG fit, as
+    a function of the laboratory momentum plab in GeV. Returns xsec in milibarn.
+
+    Reference: C. Patrignani 2016 Chinese Phys. C 40 100001
+    """
+    mp = 0.938272 # GeV
+    M = 2.1206 # GeV
+    H = 0.272 # mb
+    P, R1, R2 = 34.41, 13.07, 7.394 # in mb
+    eta1, eta2 = 0.4473, 0.5486 # dimenssionless
+
+    ecm2 = 2*(mp**2 + mp*sqrt(plab**2 + mp**2)) # GeV
+    sab = (2*mp + M)**2 # GeV
+
+    return H * log(ecm2/sab)**2 + P + R1*(ecm2/sab)**-eta1 - R2*(ecm2/sab)**-eta2
+
 class HadronicInteractions(Module):
     '''Prototype class to handle hadronic interactions
     '''
-    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000), seed=None, Emin=1e6):
+    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000), seed=None, Emin=1e6, mtag='Sibyll23d', model_xsec=False):
         """The initialization takes as arguments
             - seed           : random number generator seed
             - matter_density : the matter density in units of m-3
@@ -90,6 +123,11 @@ class HadronicInteractions(Module):
             self.random_number_generator = Random(seed)
 
         self.hi_engine = get_hi_generator(mtag, seed)
+
+        if model_xsec:
+            self.xsec = sample_model_xsec(self.hi_engine)
+        else:
+            self.xsec = sigma_pp
     
     def _compute_interaction_rates(self, kinematics):
         """Determine the hadronic rates based on inputs: matter density,
@@ -98,10 +136,9 @@ class HadronicInteractions(Module):
         # ToDo: employ distribution to describe the energy distribution of the target particles
         # ToDo: Compute interaction cross rates based on input parameters
 
-        # sigma = sigma_pp(plab) * 1e-31 # to m2
-        sigma = self.hi_engine.cross_section(kinematics).total * 1e-31 # to m2
+        sigma = self.xsec(kinematics.plab) * 1e-31 # to m2
+        # sigma = self.hi_engine.cross_section(kinematics).total * 1e-31 # to m2
 
-        # return self.matter_density * self.cross_section
         return self.matter_density * sigma
 
     def process(self, candidate):
@@ -156,7 +193,9 @@ class HadronicInteractions(Module):
             # Arbitrary orthogonal base aligned to primary direction
             random_phi = 2 * pi * self.random_number_generator.rand()            
             arbitrary_phi_rotation = R.from_euler('z', random_phi).as_matrix()
-            rotation_axis = cross(array([0, 0, 1]), primary_direction)
+            primary_direction_xy = primary_direction.copy()
+            primary_direction_xy[2] = 0
+            rotation_axis = cross(array([0, 0, 1]), primary_direction_xy)
             theta = arccos(primary_direction[2]) # in radians
             z_alignment_to_primary_direction = R.from_rotvec(theta * rotation_axis).as_matrix()
             transformation = arbitrary_phi_rotation.dot(z_alignment_to_primary_direction)
