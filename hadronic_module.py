@@ -6,6 +6,8 @@
     Leonel Morejon
 """
 
+__version__ = "dev"
+
 from numpy import pi, log, sqrt, array, cross, arccos, vstack, einsum, vectorize, logical_and, logspace
 from numpy.linalg import norm
 from scipy.spatial.transform import Rotation as R
@@ -129,7 +131,7 @@ class HadronicInteractions(Module):
         else:
             self.xsec = sigma_pp
     
-    def _compute_interaction_rates(self, kinematics):
+    def compute_interaction_rates(self, kinematics):
         """Determine the hadronic rates based on inputs: matter density,
         distribution, temperature, and composition.
         """ 
@@ -172,7 +174,7 @@ class HadronicInteractions(Module):
             return
 
         current_step = candidate.getCurrentStep()
-        Sigma = self._compute_interaction_rates(evkin)
+        Sigma = self.compute_interaction_rates(evkin)
 
         # Sampling interaction from the inverse of an exponential distribution
         random_number = self.random_number_generator.rand()
