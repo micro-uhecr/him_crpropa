@@ -16,3 +16,6 @@ To install make sure the **above listed requirements** are met. The package can 
 ```
 pip install git+https://github.com/micro-uhecr/prototype_him_crpropa.git#egg=him_crpropa
 ```
+## Publications (how to cite this work)
+For details on the physical discussion of this module refer to
+[PoS ICRC2023 (2023) 285](https://doi.org/10.22323/1.444.0285)
