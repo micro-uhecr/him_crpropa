@@ -8,13 +8,13 @@
 
 __version__ = "dev"
 
-from numpy import pi, log, sqrt, array, cross, arccos, vstack, einsum, vectorize, logical_and, logspace
+from numpy import pi, log, sqrt, array, cross, arccos, vstack, einsum, logical_and, logspace
 from numpy.linalg import norm
 from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import interp1d
 from particle import Particle
 
-from crpropa import Candidate, GeV, Module, ParticleState, Vector3d, Random
+from crpropa import Candidate, GeV, Module, ParticleState, Vector3d, Random, ConstantDensity
 
 from config_file import *
 import chromo
@@ -110,14 +110,18 @@ class HadronicInteractions(Module):
     def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000), seed=None, Emin=1e6, mtag='Sibyll23d', model_xsec=False):
         """The initialization takes as arguments
             - seed           : random number generator seed
-            - matter_density : the matter density in units of m-3
+            - matter_density : the matter density in units of m-3 (default) or an instance of Density defined in CRPropa
             - composition    : a dictionary {pid : particle_density} in arbitrary units
             - distribution   : a list containing (str distribution_type, *distribution_args)
         """
         Module.__init__(self)
-        self.matter_density = matter_density  # in m-3
+
+        self.__name__ = f'HIM ({mtag})'
+
+        self.matter_density = matter_density
         self.composition = composition
         self.Emin = Emin
+        self.allowed_secondaries = allowed_secondaries
 
         if seed is None:
             self.random_number_generator = Random()  # using the eponymous class from CRPropa
@@ -130,8 +134,29 @@ class HadronicInteractions(Module):
             self.xsec = sample_model_xsec(self.hi_engine)
         else:
             self.xsec = sigma_pp
+        
+        self.limit_secondaries()
+
+    @property
+    def matter_density(self):
+        return self._matter_density
     
-    def compute_interaction_rates(self, kinematics):
+    @matter_density.setter
+    def matter_density(self, matter_density):
+        if type(matter_density) is float:
+            self._matter_density = ConstantDensity(matter_density, 0, 0) # in m-3
+        else:
+            self._matter_density = matter_density # instance based on class Density
+
+    def limit_secondaries(self, max_lifetime=1e30):
+        """Restricts the secondaries to those with a 
+           lifetime greater than max_lifetime in seconds.
+        """
+        for part in Particle.all():            
+            if (part.lifetime is not None) and (part.lifetime < max_lifetime * 1e9):
+                self.hi_engine.set_unstable(part.pdgid)
+    
+    def compute_interaction_rates(self, kinematics, matter_density):
         """Determine the hadronic rates based on inputs: matter density,
         distribution, temperature, and composition.
         """ 
@@ -141,7 +166,7 @@ class HadronicInteractions(Module):
         sigma = self.xsec(kinematics.plab) * 1e-31 # to m2
         # sigma = self.hi_engine.cross_section(kinematics).total * 1e-31 # to m2
 
-        return self.matter_density * sigma
+        return matter_density * sigma
 
     def process(self, candidate):
         """This is the function called to operate on candidates (particles)
@@ -150,6 +175,7 @@ class HadronicInteractions(Module):
         target = crpropa2pdgid(1000010010)
         projectile = crpropa2pdgid(candidate.current.getId())
         currE = candidate.current.getEnergy() / GeV # in GeV
+        matter_density = self._matter_density.getNucleonDensity(candidate.current.getPosition())
         
         m1 = Particle.from_pdgid(projectile).mass / 1e3 # in GeV
         m2 = Particle.from_pdgid(target).mass / 1e3 # in GeV
@@ -174,7 +200,9 @@ class HadronicInteractions(Module):
             return
 
         current_step = candidate.getCurrentStep()
-        Sigma = self.compute_interaction_rates(evkin)
+        Sigma = self.compute_interaction_rates(evkin, matter_density)
+        if Sigma == 0:
+            return
 
         # Sampling interaction from the inverse of an exponential distribution
         random_number = self.random_number_generator.rand()
@@ -210,10 +238,10 @@ class HadronicInteractions(Module):
                 ps = ParticleState(int(pid), en * GeV, interaction_position, direction)
                 candidate.addSecondary(Candidate(ps))
 
-            # TODO: improve limiting step condition based on cross section
+            # TODO: improve limiting step condition should be done if interaction did not occur
             candidate.limitNextStep(interaction_step)
 
-            # TODO: Verify if primary should be deactivated
+            # TODO: Primary should be deactivated
             # candidate.current.setEnergy(currE - Eloss)
             candidate.current.setEnergy(0)
 
@@ -233,7 +261,8 @@ class HadronicInteractions(Module):
         event.kin.apply_boost(event, EventFrame.FIXED_TARGET)
 
         # Filtering particles
-        mask = logical_and(event.en > self.Emin, [pid in allowed_secondaries for pid in event.pid])
+        mask = event.en > self.Emin
+        mask = logical_and(event.en > 0, [pid in self.allowed_secondaries for pid in event.pid])
         
         energies = event.en[mask]
         momenta = vstack([event.px[mask], event.py[mask], event.pz[mask]]).T
