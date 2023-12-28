@@ -143,7 +143,10 @@ class HadronicInteractions(Module):
     
     @matter_density.setter
     def matter_density(self, matter_density):
-        if type(matter_density) is float:
+        """Setting the matter density: if a number, constant density in units of m^-3,
+        otherwise takes an instance of density class from CRPropa.
+        """
+        if type(matter_density) in [int, float]:
             self._matter_density = ConstantDensity(matter_density, 0, 0) # in m-3
         else:
             self._matter_density = matter_density # instance based on class Density
