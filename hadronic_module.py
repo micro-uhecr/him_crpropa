@@ -90,6 +90,7 @@ def sample_model_xsec(hi_generator):
 def sigma_pp(plab):
     """Cross section for proton-proton interactions based on the PDG fit, as
     a function of the laboratory momentum plab in GeV. Returns xsec in milibarn.
+    The inelastic cross section is modeled as a fraction of this total cross section.
 
     Reference: C. Patrignani 2016 Chinese Phys. C 40 100001
     """
@@ -101,8 +102,9 @@ def sigma_pp(plab):
 
     ecm2 = 2*(mp**2 + mp*sqrt(plab**2 + mp**2)) # GeV
     sab = (2*mp + M)**2 # GeV
+    xsec_total = H * log(ecm2/sab)**2 + P + R1*(ecm2/sab)**-eta1 - R2*(ecm2/sab)**-eta2
 
-    return H * log(ecm2/sab)**2 + P + R1*(ecm2/sab)**-eta1 - R2*(ecm2/sab)**-eta2
+    return 0.81 * xsec_total
 
 class HadronicInteractions(Module):
     '''Prototype class to handle hadronic interactions
