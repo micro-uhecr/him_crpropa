@@ -14,13 +14,15 @@ from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import interp1d
 from particle import Particle
 
-from crpropa import Candidate, GeV, Module, ParticleState, Vector3d, Random, ConstantDensity
+from crpropa import Candidate, mass_proton, c_light, GeV, Module, ParticleState, Vector3d, Random, ConstantDensity
 
 from config_file import *
 import chromo
 from chromo.models import *
 from chromo.kinematics import EventKinematics, CenterOfMass
 from chromo.util import elab2ecm, CompositeTarget, EventFrame
+
+mp = mass_proton * c_light**2 / GeV
 
 # Dealing with proton and neutron pid ambiguity
 def pdgid2crpropa(pid):
@@ -82,8 +84,8 @@ def sample_model_xsec(hi_generator):
     plab_vals = []
     for ecm in ecm_vals:
         kin = CenterOfMass(ecm, "p", "p")
-        plab_vals.append(sqrt(kin.elab**2 - (kin.p1.A * .935)**2))
-        csec_vals.append(hi_generator.cross_section(kin).total)
+        plab_vals.append(sqrt(kin.elab**2 - (kin.p1.A * mp)**2))
+        csec_vals.append(hi_generator.cross_section(kin).inelastic)
         
     return interp1d(plab_vals, csec_vals)
 
