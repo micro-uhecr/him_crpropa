@@ -119,15 +119,14 @@ class HadronicInteractions(Module):
         """
         Module.__init__(self)
 
-        self.__name__ = f'HIM ({mtag})'
-
         self.matter_density = matter_density
         self.composition = composition
         self.Emin = Emin
         self.allowed_secondaries = allowed_secondaries
         
         self.model_xsec = model_xsec
-        self.hi_engine = get_hi_generator(mtag, seed)
+        self._hi_engine = object
+        self.hi_engine = mtag
 
         if seed is None:
             self.random_number_generator = Random()  # using the eponymous class from CRPropa
@@ -148,14 +147,22 @@ class HadronicInteractions(Module):
         """
 
         if type(new_engine) == str:
-            self._hi_engine = get_hi_generator(mtag)
+            if new_engine in str(type(self._hi_engine)):
+                return
+            self._hi_engine = get_hi_generator(new_engine)
         else:
+            if new_engine == self._hi_engine:
+                return
             self._hi_engine = new_engine
         
         if self.model_xsec:
+            print('Sampling interaction cross sections.')
             self.xsec = sample_model_xsec(self._hi_engine)
+            print('Sampling interaction cross sections completed.')
         else:
             self.xsec = sigma_pp
+
+        self.__name__ = f'HIM ({type(new_engine)})'
         
     @property
     def matter_density(self):
