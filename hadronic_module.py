@@ -72,7 +72,6 @@ def get_hi_generator(modelname, initseed=None):
 
     return globals()[modelname](init_event_kinematics, seed=initseed)
 
-# HMRunInstance = get_hi_generator(mtag, 100001)
 
 def sample_model_xsec(hi_generator):
     """Sampling the model cross section for proton-proton 
@@ -126,21 +125,38 @@ class HadronicInteractions(Module):
         self.composition = composition
         self.Emin = Emin
         self.allowed_secondaries = allowed_secondaries
+        
+        self.model_xsec = model_xsec
+        self.hi_engine = get_hi_generator(mtag, seed)
 
         if seed is None:
             self.random_number_generator = Random()  # using the eponymous class from CRPropa
         else:
             self.random_number_generator = Random(seed)
-
-        self.hi_engine = get_hi_generator(mtag, seed)
-
-        if model_xsec:
-            self.xsec = sample_model_xsec(self.hi_engine)
-        else:
-            self.xsec = sigma_pp
         
         self.limit_secondaries()
 
+    @property
+    def hi_engine(self):
+        return self._hi_engine
+
+    @hi_engine.setter
+    def hi_engine(self, new_engine):
+        """Setting or changing the hadronic interactions generator.
+        Allowed values are any of the mtag values available in chromo
+        or directly the result of get_hi_generator.
+        """
+
+        if type(new_engine) == str:
+            self._hi_engine = get_hi_generator(mtag)
+        else:
+            self._hi_engine = new_engine
+        
+        if self.model_xsec:
+            self.xsec = sample_model_xsec(self._hi_engine)
+        else:
+            self.xsec = sigma_pp
+        
     @property
     def matter_density(self):
         return self._matter_density
