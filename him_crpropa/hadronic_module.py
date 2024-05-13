@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import interp1d
 from particle import Particle
 
-from crpropa import Candidate, mass_proton, c_light, GeV, Module, ParticleState, Vector3d, Random, ConstantDensity
+from crpropa import Candidate, mass_proton, c_light, GeV, Module, ParticleState, Vector3d, Random, ConstantDensity, massNumber, chargeNumber, nucleusId
 
 from him_crpropa.config_file import *
 import chromo
@@ -59,7 +59,7 @@ def crpropa2pdgid(pid):
     else:
         return pid
 
-def get_hi_generator(modelname, initseed=None):
+def get_hi_generator(modelname, initseed=None, init_event_kinematics=None):
     """Manages hadronic models, there cannot be 
     two concurrent instances of the same model.
     """
@@ -68,29 +68,30 @@ def get_hi_generator(modelname, initseed=None):
         return
 
     # Some arbitrary initialization
-    init_event_kinematics = EventKinematics(
-        'proton',
-        'proton',
-        elab=1e12,    # GeV, high enough energy to cover all energies the propagation will use
-    )
+    if init_event_kinematics is None:
+        init_event_kinematics = EventKinematics(
+            'proton',
+            'proton',
+            elab=1e11,    # GeV, high enough energy to cover all energies the propagation will use
+        )
 
     return globals()[modelname](init_event_kinematics, seed=initseed)
 
 
-def sample_model_xsec(hi_generator):
+def sample_model_xsec(hi_generator, projectile='p'):
     """Sampling the model cross section for proton-proton 
     interactions, as a function of the laboratory momentum 
     plab in GeV. Returns xsec in milibarn.
     """
     csec_vals = []
-    ecm_vals = logspace(1, 6, 30)
+    ecm_vals = logspace(1, 7, 30)
     plab_vals = []
     for ecm in ecm_vals:
-        kin = CenterOfMass(ecm, "p", "p")
-        plab_vals.append(sqrt(kin.elab**2 - (kin.p1.A * mp)**2))
+        kin = CenterOfMass(ecm, projectile, "p")
+        plab_vals.append(kin.plab)
         csec_vals.append(hi_generator.cross_section(kin).inelastic)
         
-    return interp1d(plab_vals, csec_vals)
+    return interp1d(plab_vals, csec_vals, fill_value="extrapolate")
 
 def sigma_pp(plab):
     """Cross section for proton-proton interactions based on the PDG fit, as
@@ -114,7 +115,7 @@ def sigma_pp(plab):
 class HadronicInteractions(Module):
     '''Prototype class to handle hadronic interactions
     '''
-    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000), seed=None, Emin=1e6, mtag='Sibyll23d', model_xsec=False):
+    def __init__(self, matter_density=1e-30, composition={101:100}, distribution=('thermal', 1000), seed=None, Emin=1e6, mtag='Sibyll23d', model_xsec=False, projectile=(1, 1)):
         """The initialization takes as arguments
             - seed           : random number generator seed
             - matter_density : the matter density in units of m-3 (default) or an instance of Density defined in CRPropa
@@ -128,6 +129,7 @@ class HadronicInteractions(Module):
         self.Emin = Emin
         self.allowed_secondaries = allowed_secondaries
         
+        self.projectile = Particle.from_nucleus_info(*projectile).pdgid
         self.model_xsec = model_xsec
         self._hi_engine = object
         self.hi_engine = mtag
@@ -161,7 +163,7 @@ class HadronicInteractions(Module):
         
         if self.model_xsec:
             print('Sampling interaction cross sections.')
-            self.xsec = sample_model_xsec(self._hi_engine)
+            self.xsec = sample_model_xsec(self._hi_engine, self.projectile)
             print('Sampling interaction cross sections completed.')
         else:
             self.xsec = sigma_pp
@@ -217,6 +219,10 @@ class HadronicInteractions(Module):
         
         target = crpropa2pdgid(1000010010)
         projectile = crpropa2pdgid(candidate.current.getId())
+
+        if projectile not in allowed_primaries:
+            return
+
         currE = candidate.current.getEnergy() / GeV # in GeV
         matter_density = self._matter_density.getNucleonDensity(candidate.current.getPosition())
         
@@ -225,7 +231,7 @@ class HadronicInteractions(Module):
         Ecm = elab2ecm(currE, m1, m2)
         evkin = chromo.kinematics.CenterOfMass(Ecm, target, projectile)
 
-        # Invert particle order if projectile not allowed by generator
+        # Invert particle order if projectile not allowed by generator (e.g. Sibyll3.2d)
         if projectile not in self.hi_engine.projectiles:
             if (target in self.hi_engine.projectiles) and (projectile in self.hi_engine.targets):
                 # swapping target and projectile with equivalent c.m. energy
@@ -255,7 +261,7 @@ class HadronicInteractions(Module):
         
         if interaction_occurred:
             # Sample colission and get secondaries 
-            pids, energies, momenta = self.sample_interaction()
+            wounded_nucleons, (pids, energies, momenta) = self.sample_interaction()
             Eloss = energies.sum() * GeV
             crpropa_direction = candidate.current.getDirection()
             primary_direction = array([crpropa_direction.x, crpropa_direction.y, crpropa_direction.z])
@@ -282,12 +288,16 @@ class HadronicInteractions(Module):
                 ps = ParticleState(int(pid), en * GeV, interaction_position, direction)
                 candidate.addSecondary(Candidate(ps))
 
-            # TODO: improve limiting step condition should be done if interaction did not occur
+            Z, A = massNumber(candidate.current.getId()), chargeNumber(candidate.current.getId())
+            if A > 1:
+                wounded_protons = min(Z, self.random_number_generator.rand() * (wounded_nucleons + 1))
+                candidate.created = candidate.current
+                candidate.current.setId(nucleusId(int(Z - wounded_protons), int(A - wounded_nucleons)))
+                candidate.current.setEnergy(currE / A * (A - wounded_nucleons) * GeV)
+            else:
+                candidate.current.setEnergy(0)
+        else:
             candidate.limitNextStep(interaction_step)
-
-            # TODO: Primary should be deactivated
-            # candidate.current.setEnergy(currE - Eloss)
-            candidate.setActive(False)
 
     def sample_interaction(self):
         """Calls hadronic model and returns products
@@ -300,7 +310,8 @@ class HadronicInteractions(Module):
         event = list(self.hi_engine(1))[0]
 
         event = event.final_state()
-        
+        wounded = event.n_wounded[0]
+                
         # Applying boost to lab frame
         event.kin.apply_boost(event, EventFrame.FIXED_TARGET)
 
@@ -316,5 +327,5 @@ class HadronicInteractions(Module):
         # TODO: Implement substituting not allowed secondaries by its allowed decay products
 
         # return (pids[:4], event.en[:4], momenta[:4, :])
-        return (pids, energies, momenta)
+        return wounded, (pids, energies, momenta)
         # return (array([1000260560, 1000260560]), array([.1, .1]), array([[0, 0, 1], [0, 0, 1]]))
