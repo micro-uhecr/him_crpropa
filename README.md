@@ -5,11 +5,11 @@ A (prototype) implementation of hadronic interactions in [CRPropa](https://githu
 A release version is in preparation.
 
 ## Requirements
-- [chromo](https://github.com/impy-project/chromo)
-- [CRPropa](https://github.com/CRPropa/CRPropa3)
-- numpy
-- scipy
-- particle
+- [chromo=0.5.1](https://github.com/impy-project/chromo)
+- [CRPropa=3.2.1](https://github.com/CRPropa/CRPropa3)
+- numpy=1.23.5
+- scipy=1.13.1
+- particle=0.24.0
 
 ## Installation
 To install make sure the **above listed requirements** are met. The package can be installed running the following command on the terminal:
