@@ -4,9 +4,11 @@
 
     Date: 9/9/2021
     Leonel Morejon
+    
+    Updated by Julien Dörner on 16/01/2025
 """
 
-__version__ = "dev"
+__version__ = "0.0.1"
 
 from numpy import pi, log, sqrt, array, cross, arccos, vstack, einsum, logical_and, logspace
 import numpy as np
