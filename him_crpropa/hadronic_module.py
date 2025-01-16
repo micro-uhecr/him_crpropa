@@ -19,7 +19,7 @@ from particle import Particle
 
 from crpropa import Candidate, mass_proton, c_light, GeV, Module, ParticleState, Vector3d, Random, ConstantDensity
 
-from config_file import *
+from him_crpropa.config_file import *
 import chromo
 from chromo.models import *
 from chromo.kinematics import CenterOfMass

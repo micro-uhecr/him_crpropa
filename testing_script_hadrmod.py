@@ -1,5 +1,5 @@
 from crpropa import *
-from hadronic_module import * 
+from him_crpropa.hadronic_module import * 
 import sys
 
 def TestRun1D(N=100, filename='Test1.txt', density=1e13, seed=None):
