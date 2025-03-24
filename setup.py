@@ -1,14 +1,14 @@
 from setuptools import setup
 
-from hadronic_module import __version__
-
 setup(
     name='him_crpropa',
-    version=__version__,
+    version="0.1.0",
 
     url='https://github.com/micro-uhecr/prototype_him_crpropa',
     author='Leonel Morejon',
     author_email='leonel.morejon@uni-wuppertal.de',
-
+    
+    install_requires=['numpy','scipy', 'chromo>=0.5.0'],
+    packages=['him_crpropa'],
     py_modules=['him_crpropa'],
 )

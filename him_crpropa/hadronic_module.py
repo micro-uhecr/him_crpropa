@@ -4,11 +4,14 @@
 
     Date: 9/9/2021
     Leonel Morejon
+    
+    Updated by Julien Dörner on 16/01/2025
 """
 
-__version__ = "dev"
+__version__ = "0.0.1"
 
 from numpy import pi, log, sqrt, array, cross, arccos, vstack, einsum, logical_and, logspace
+import numpy as np
 from numpy.linalg import norm
 from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import interp1d
@@ -16,10 +19,11 @@ from particle import Particle
 
 from crpropa import Candidate, mass_proton, c_light, GeV, Module, ParticleState, Vector3d, Random, ConstantDensity
 
-from config_file import *
+from him_crpropa.config_file import *
 import chromo
 from chromo.models import *
-from chromo.kinematics import EventKinematics, CenterOfMass
+from chromo.kinematics import CenterOfMass
+from chromo.kinematics import EventKinematicsWithRestframe as EventKinematics
 from chromo.util import elab2ecm, CompositeTarget, EventFrame
 
 mp = mass_proton * c_light**2 / GeV
@@ -173,7 +177,7 @@ class HadronicInteractions(Module):
         """Setting the matter density: if a number, constant density in units of m^-3,
         otherwise takes an instance of density class from CRPropa.
         """
-        if type(matter_density) in [int, float]:
+        if type(matter_density) in [int, float, np.int64, np.float64]:
             self._matter_density = ConstantDensity(matter_density, 0, 0) # in m-3
         else:
             self._matter_density = matter_density # instance based on class Density
@@ -182,9 +186,15 @@ class HadronicInteractions(Module):
         """Restricts the secondaries to those with a 
            lifetime greater than max_lifetime in seconds.
         """
+    
         for part in Particle.all():            
             if (part.lifetime is not None) and (part.lifetime < max_lifetime * 1e9):
-                self.hi_engine.set_unstable(part.pdgid)
+                try:
+                    self.hi_engine.set_unstable(part.pdgid)
+                    print(part.name)
+                except:
+                    print(f"WARNING: {part.name} not allowed as secondary.")
+                
     
     def compute_interaction_rates(self, kinematics, matter_density):
         """Determine the hadronic rates based on inputs: matter density,
@@ -202,6 +212,9 @@ class HadronicInteractions(Module):
         """This is the function called to operate on candidates (particles)
         and at the moment only works with protons!!!
         """
+        if not candidate.current.getId() == 1000010010:
+            return
+        
         target = crpropa2pdgid(1000010010)
         projectile = crpropa2pdgid(candidate.current.getId())
         currE = candidate.current.getEnergy() / GeV # in GeV
@@ -244,11 +257,12 @@ class HadronicInteractions(Module):
             # Sample colission and get secondaries 
             pids, energies, momenta = self.sample_interaction()
             Eloss = energies.sum() * GeV
-            primary_direction = array(candidate.current.getDirection())
-
+            crpropa_direction = candidate.current.getDirection()
+            primary_direction = array([crpropa_direction.x, crpropa_direction.y, crpropa_direction.z])
+        
+            
             # Set interaction position in CRPropa corrdinate system
-            step_back = (current_step - interaction_step) * primary_direction
-            interaction_position  = candidate.current.getPosition() - Vector3d(step_back[0], step_back[1], step_back[2])
+            interaction_position = candidate.current.getPosition() - candidate.current.getDirection() * interaction_step
 
             # Arbitrary orthogonal base aligned to primary direction
             random_phi = 2 * pi * self.random_number_generator.rand()            
@@ -273,7 +287,7 @@ class HadronicInteractions(Module):
 
             # TODO: Primary should be deactivated
             # candidate.current.setEnergy(currE - Eloss)
-            candidate.current.setEnergy(0)
+            candidate.setActive(False)
 
     def sample_interaction(self):
         """Calls hadronic model and returns products

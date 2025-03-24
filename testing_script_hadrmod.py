@@ -1,5 +1,6 @@
 from crpropa import *
-from hadronic_module import * 
+from him_crpropa.hadronic_module import * 
+import sys
 
 def TestRun1D(N=100, filename='Test1.txt', density=1e13, seed=None):
     """Testing function for hadronic module in 1D
@@ -184,8 +185,12 @@ def TestOneInteractionLength(N=100, filename='Test1.txt', energy=1, seed=None):
 
 if __name__ == "__main__":
     # TestRun1D(100000, 'output.txt')
-    Nprimaries = int(sys.argv[1])
-    output_filename = sys.argv[2]
+    Nprimaries = 100
+    output_filename = 'output.txt'
+    if len(sys.argv) > 2:
+        Nprimaries = int(sys.argv[1])
+    if len(sys.argv) == 3:
+        output_filename = sys.argv[2]
 
     Random_seedThreads(1987)
     # TestRun1D(Nprimaries, output_filename, seed=1967)
